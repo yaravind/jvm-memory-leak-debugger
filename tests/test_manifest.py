@@ -94,10 +94,13 @@ def test_harness_examples_reference_public_tools():
     assert installed["http"]["tool_catalog_url"].endswith("/tools")
 
 
-def test_manual_mat_runtime_workflow_stays_release_smoke_only():
+def test_mat_runtime_workflow_stays_release_smoke_only():
     workflow = (ROOT / ".github" / "workflows" / "mat-runtime-smoke.yml").read_text()
 
     assert "workflow_dispatch:" in workflow
+    assert "push:" in workflow
+    assert "pull_request:" in workflow
+    assert "tools/mat_runner.py" in workflow
     assert "ubuntu-latest" in workflow
     assert "macos-latest" in workflow
     assert "windows-latest" in workflow
@@ -194,6 +197,7 @@ def test_release_readiness_checklist_tracks_required_evidence():
         "PYTHON=/private/tmp/jvm-memleak-py312-adapters/bin/python make test-adapters",
         "passed 8 tests",
         "gh workflow run \"MAT Runtime Smoke\"",
+        "push/PR-triggered",
         "gh run watch <run-id>",
         "gh run view <run-id> --log-failed",
         "--json databaseId,status,conclusion,url",
@@ -213,6 +217,7 @@ def test_release_readiness_checklist_tracks_required_evidence():
         "PYTHON=/private/tmp/jvm-memleak-py312-adapters/bin/python make test-adapters",
         "2 MCP wrapper tests",
         "gh workflow run \"MAT Runtime Smoke\"",
+        "push/PR-triggered",
         "gh run watch",
         "gh run view --log-failed",
         "gh run view <run-id> --json url",

@@ -568,6 +568,24 @@ Codex, Claude, GitHub Copilot, MCP hosts, HTTP adapters, and shell workflows.
     E2E tests deselected.
   - `make validate-manifests` passed.
   - `make lint` passed with the `py_compile` fallback across 13 Python files.
+- GitHub Actions run `26345407456`
+  (`https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345407456`)
+  passed for commit `783dbbb`, including Linux/macOS/Windows cross-platform
+  smoke, pyflakes lint, package smoke, Python 3.11 optional adapter smoke, and
+  real GC-log E2E jobs.
+- Updated `MAT Runtime Smoke` so branch and PR changes to MAT runtime inputs can
+  trigger hosted Linux/macOS/Windows MAT download/unpack evidence before the
+  workflow exists on the default branch. Kept `workflow_dispatch` for release
+  reruns after default-branch availability.
+- Verification after MAT workflow trigger update:
+  - `PYTHONPATH=tools python3 -m pytest tests/test_manifest.py -v` passed, 19
+    tests.
+  - Ruby YAML parse passed for `.github/workflows/test-skill.yml` and
+    `.github/workflows/mat-runtime-smoke.yml`.
+  - `make validate-manifests` passed.
+  - `make test` passed: 97 selected tests, 2 optional adapter skips, and 3 full
+    E2E tests deselected.
+  - `make lint` passed with the `py_compile` fallback across 13 Python files.
 
 ## Current Implementation Pass
 

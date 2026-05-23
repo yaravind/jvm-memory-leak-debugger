@@ -66,8 +66,10 @@ Before marking the maturity goal complete, record the successful run URLs for:
 - `Test JVM Memory Leak Debugger Skill`
 - `MAT Runtime Smoke`
 
-The MAT workflow is intentionally manual because it downloads external Eclipse
-MAT archives. It does not require or upload heap dumps.
+The MAT workflow downloads external Eclipse MAT archives, so it is scoped to
+runtime-related path changes for push/PR-triggered branch evidence and also
+supports manual reruns after the workflow exists on the default branch. It does
+not require or upload heap dumps.
 
 After the maturity branch is committed and pushed, capture the required
 evidence with GitHub CLI:
@@ -79,15 +81,21 @@ gh run list --repo yaravind/jvm-memory-leak-debugger \
   --limit 1 \
   --json databaseId,status,conclusion,url
 
-gh workflow run "MAT Runtime Smoke" \
-  --repo yaravind/jvm-memory-leak-debugger \
-  --ref codex/maturity-roadmap
-
 gh run list --repo yaravind/jvm-memory-leak-debugger \
   --workflow "MAT Runtime Smoke" \
   --branch codex/maturity-roadmap \
   --limit 1 \
   --json databaseId,status,conclusion,url
+```
+
+If no branch-triggered `MAT Runtime Smoke` run exists, push a change that touches
+one of its configured paths or, once the workflow is present on the default
+branch, rerun it manually:
+
+```bash
+gh workflow run "MAT Runtime Smoke" \
+  --repo yaravind/jvm-memory-leak-debugger \
+  --ref codex/maturity-roadmap
 ```
 
 For each run, wait for completion with `gh run watch <run-id>` and inspect
@@ -102,8 +110,9 @@ Record the successful `url` values in
 
 ## Handoff Notes
 
-- Do not claim Windows MAT readiness from source-only tests; use the manual MAT
-  runtime workflow or a Windows host running `make test-mat-runtime`.
+- Do not claim Windows MAT readiness from source-only tests; use the
+  push/PR-triggered MAT runtime workflow, the manual MAT runtime workflow, or a
+  Windows host running `make test-mat-runtime`.
 - Keep `report.json` as the source of truth for harnesses. Markdown output is a
   rendering for humans.
 - Treat missing heap evidence as a reportable analysis gap, not a successful

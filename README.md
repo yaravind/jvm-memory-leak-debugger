@@ -108,10 +108,12 @@ job for the HTTP/FastAPI bridge and Claude MCP wrappers, plus a non-editable
 package smoke that verifies installed skill bundle data outside a source
 checkout.
 
-A manual `MAT Runtime Smoke` GitHub Actions workflow is available for
+A `MAT Runtime Smoke` GitHub Actions workflow is available for
 release-readiness evidence. It runs on Linux, macOS, and Windows with Java 17,
 then downloads, verifies, unpacks, and validates the pinned MAT distribution
-without requiring a heap dump.
+without requiring a heap dump. It runs automatically for PRs and branch pushes
+that touch MAT runtime inputs, and can also be manually dispatched after the
+workflow exists on the default branch.
 
 For the current release proof matrix and the remaining external evidence
 required before claiming full maturity, see
@@ -119,8 +121,9 @@ required before claiming full maturity, see
 
 After the maturity branch is committed and pushed, use the GitHub Actions
 runbook in `docs/architecture/RELEASE_READINESS_CHECKLIST.md` to capture the
-required cross-platform and MAT runtime run URLs. The MAT runtime workflow can
-be started with:
+required cross-platform and MAT runtime run URLs. If the push/PR-triggered MAT
+run needs to be rerun after the workflow exists on the default branch, start it
+with:
 
 ```bash
 gh workflow run "MAT Runtime Smoke" \

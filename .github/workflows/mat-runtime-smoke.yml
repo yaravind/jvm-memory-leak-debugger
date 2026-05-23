@@ -2,6 +2,22 @@ name: MAT Runtime Smoke
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/mat-runtime-smoke.yml"
+      - "tools/mat_runner.py"
+      - "tools/debug_memory_leak.py"
+      - "pyproject.toml"
+      - "setup.py"
+      - "Makefile"
+  pull_request:
+    paths:
+      - ".github/workflows/mat-runtime-smoke.yml"
+      - "tools/mat_runner.py"
+      - "tools/debug_memory_leak.py"
+      - "pyproject.toml"
+      - "setup.py"
+      - "Makefile"
 
 jobs:
   mat-runtime-smoke:

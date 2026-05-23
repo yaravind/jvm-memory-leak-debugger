@@ -32,7 +32,7 @@ For the GitHub issue-by-issue implementation evidence, see
 | Area | Current evidence | Missing evidence |
 | --- | --- | --- |
 | Cross-platform core | `.github/workflows/test-skill.yml` defines Linux, macOS, and Windows smoke coverage for Python 3.9 and 3.12, installed CLI checks, package smoke, adapter smoke, and real GC fixture tests. | Live successful `Test JVM Memory Leak Debugger Skill` GitHub Actions run URL from this branch. |
-| MAT runtime portability | `.github/workflows/mat-runtime-smoke.yml` and `make test-mat-runtime` verify the pinned MAT archive download/unpack path without a heap dump. Local no-download diagnostics work, but this host's Java points at Java 11. | Live successful `MAT Runtime Smoke` GitHub Actions run URL, or equivalent Linux/macOS/Windows host logs with Java 17 and network access. |
+| MAT runtime portability | `.github/workflows/mat-runtime-smoke.yml` and `make test-mat-runtime` verify the pinned MAT archive download/unpack path without a heap dump. The workflow supports push/PR-triggered branch evidence and manual reruns after it exists on the default branch. Local no-download diagnostics work, but this host's Java points at Java 11. | Live successful `MAT Runtime Smoke` GitHub Actions run URL, or equivalent Linux/macOS/Windows host logs with Java 17 and network access. |
 
 ## External State Checked
 
@@ -44,8 +44,9 @@ On 2026-05-23 17:58 EDT, `gh run list` found no
 
 ## Do Not Claim Yet
 
-- Do not claim Windows MAT readiness from source-only tests. Use the manual MAT
-  runtime workflow or a Windows host running `make test-mat-runtime`.
+- Do not claim Windows MAT readiness from source-only tests. Use the
+  push/PR-triggered MAT runtime workflow, the manual MAT runtime workflow, or a
+  Windows host running `make test-mat-runtime`.
 - Do not claim hosted MCP runtime readiness until the Python 3.11
   `adapter-smoke` job in `Test JVM Memory Leak Debugger Skill` has a successful
   live run URL, even though local Python 3.12 MCP smoke now passes.
@@ -57,8 +58,9 @@ On 2026-05-23 17:58 EDT, `gh run list` found no
 1. Push the maturity branch after explicit commit/push authorization.
 2. Run `Test JVM Memory Leak Debugger Skill` on GitHub Actions and record the
    successful run URL.
-3. Run `MAT Runtime Smoke` manually on GitHub Actions and record the successful
-   run URL.
+3. Use the push/PR-triggered `MAT Runtime Smoke` GitHub Actions run, or rerun it
+   manually after the workflow exists on the default branch, and record the
+   successful run URL.
 4. Confirm the `adapter-smoke` job in `Test JVM Memory Leak Debugger Skill`
    passed, because it is the hosted Python 3.11 MCP proof.
 

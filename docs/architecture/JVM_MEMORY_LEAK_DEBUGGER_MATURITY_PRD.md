@@ -261,14 +261,15 @@ Acceptance criteria:
   execution.
 - Cross-platform jobs verify the MAT runtime diagnostic can identify the
   platform-specific pinned MAT archive without downloading it.
-- Manual release workflow can verify the pinned MAT archive downloads,
+- Release evidence workflow can verify the pinned MAT archive downloads,
   SHA-256-checks, unpacks, and exposes an Equinox launcher on Linux, macOS, and
   Windows without requiring a heap dump.
 - Linux jobs still run the broader fast test suite and real GC-log E2E tests.
 - CI verifies a non-editable package install can find bundled skill files from a
   working directory outside the repository.
 - Release sign-off records live GitHub Actions run URLs for the cross-platform
-  package/core matrix and the manual MAT runtime smoke workflow.
+  package/core matrix and the push/PR-triggered or manually rerun MAT runtime
+  smoke workflow.
 - Full heap replay remains available as external release evidence, but is not a
   default release gate unless a maintained trusted heap artifact is available.
 
@@ -336,8 +337,8 @@ Acceptance criteria:
   native Windows x86_64 Eclipse MAT ZIP distribution as the primary supported
   Windows path. WSL with the Linux package remains fallback guidance for
   Windows ARM64 or hosts that provide a managed MAT installation, but release
-  readiness must still be proven through the manual MAT runtime smoke workflow
-  or an equivalent Windows host run.
+  readiness must still be proven through the push/PR-triggered MAT runtime smoke
+  workflow, a manual MAT runtime smoke rerun, or an equivalent Windows host run.
 - Custom recommendation pattern language is resolved by
   `docs/adr/0003-use-schema-backed-custom-recommendation-patterns.md`: keep
   built-in recommendations generic and support schema-backed JSON extension
