@@ -1,0 +1,24 @@
+{
+  "name": "jvm-memory-leak-debugger-codex",
+  "description": "Codex-style local skill configuration using the checked-in manifest and direct Python dispatcher.",
+  "host": "openai-codex",
+  "transport": "direct_function_dispatch",
+  "manifest": "/ABSOLUTE/PATH/TO/jvm-memory-leak-debugger/skill.json",
+  "instructions": "/ABSOLUTE/PATH/TO/jvm-memory-leak-debugger/instructions/system_prompt.md",
+  "python_path": "/ABSOLUTE/PATH/TO/jvm-memory-leak-debugger/tools",
+  "dispatcher": {
+    "module": "dispatch",
+    "function": "dispatch_tool"
+  },
+  "tools": [
+    "analyze_gc_log",
+    "extract_heap_suspects",
+    "correlate_dump_to_gc",
+    "generate_report"
+  ],
+  "preflight": [
+    "python3 -m pip install -e . --no-deps",
+    "jvm-memory-leak-debugger --help",
+    "jvm-memory-leak-debugger --check-runtime --json"
+  ]
+}

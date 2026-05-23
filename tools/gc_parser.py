@@ -98,11 +98,6 @@ _RE_PAUSE_SUMMARY = re.compile(
     r"(?P<before>\d+)M->(?P<after>\d+)M\((?P<heap>\d+)M\) (?P<pause>[0-9.]+)ms"
 )
 
-_RE_PAUSE_FULL_SUMMARY = re.compile(
-    r"GC\((?P<id>\d+)\) Pause Full.*?"
-    r"(?P<before>\d+)M->(?P<after>\d+)M\((?P<heap>\d+)M\) (?P<pause>[0-9.]+)ms"
-)
-
 _RE_TO_SPACE = re.compile(r"GC\((?P<id>\d+)\) To-space exhausted")
 _RE_CONCURRENT_ABORT = re.compile(r"GC\((?P<id>\d+)\) Concurrent Mark Abort")
 _RE_METADATA_THRESHOLD = re.compile(r"Metadata GC Threshold")
@@ -184,6 +179,7 @@ def parse_gc_log(path: str) -> GcSummary:
                 concurrent_abort_ids.add(int(ca.group("id")))
 
             # ---- Pause summaries ----
+            # This pattern covers Young, Full, Remark, and Cleanup pause lines.
             ps = _RE_PAUSE_SUMMARY.search(msg)
             if ps:
                 gc_id = int(ps.group("id"))
@@ -206,24 +202,6 @@ def parse_gc_log(path: str) -> GcSummary:
                 elif kind == "Full":
                     full_pauses.append(ev.pause_ms)
                     full_gc_events.append(ev)
-
-            pf = _RE_PAUSE_FULL_SUMMARY.search(msg)
-            if pf and "Pause Full" in msg and not ps:
-                gc_id = int(pf.group("id"))
-                ev = GcEvent(
-                    gc_id=gc_id,
-                    elapsed_s=elapsed,
-                    kind="Full",
-                    reason="G1 Evacuation Pause",
-                    before_mb=float(pf.group("before")),
-                    after_mb=float(pf.group("after")),
-                    heap_mb=float(pf.group("heap")),
-                    pause_ms=float(pf.group("pause")),
-                )
-                event_by_id[gc_id] = ev
-                events.append(ev)
-                full_pauses.append(ev.pause_ms)
-                full_gc_events.append(ev)
 
             # ---- Heap exit ----
             he = _RE_HEAP_EXIT.search(msg)
@@ -324,3 +302,7 @@ def gc_summary_to_dict(s: GcSummary) -> Dict[str, Any]:
         "heap_exit_total_mb": s.heap_exit_total_mb,
     }
 
+
+def parse_and_summarize(gc_log_path: str) -> Dict[str, Any]:
+    """Parse a GC log and return the JSON-serialisable summary."""
+    return gc_summary_to_dict(parse_gc_log(gc_log_path))

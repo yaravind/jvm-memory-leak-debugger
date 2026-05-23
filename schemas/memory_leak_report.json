@@ -3,11 +3,12 @@
   "title": "MemoryLeakReport",
   "description": "Output schema for the generate_report tool (report.json)",
   "type": "object",
-  "required": ["schema_version", "generated_at", "inputs", "gc_analysis",
+  "required": ["schema_version", "generated_at", "severity", "inputs", "gc_analysis",
                "heap_dump_analysis", "correlation", "recommendations"],
   "properties": {
     "schema_version": { "type": "string", "enum": ["1.0"] },
     "generated_at":   { "type": "string", "format": "date-time" },
+    "severity":       { "type": "string" },
     "inputs": {
       "type": "object",
       "required": ["hprof", "gc_log"],
@@ -19,7 +20,13 @@
     "gc_analysis": { "$ref": "gc_analysis_result.json" },
     "heap_dump_analysis": {
       "type": "object",
+      "required": ["analysis_status", "suspects", "histogram"],
       "properties": {
+        "analysis_status": {
+          "type": "string",
+          "enum": ["completed", "parsed_existing", "skipped", "failed", "not_run", "unknown"]
+        },
+        "error": { "type": ["string", "null"] },
         "suspects": {
           "type": "array",
           "items": {
@@ -50,13 +57,19 @@
           }
         },
         "suspects_zip": { "type": ["string", "null"] }
-      }
+      },
+      "additionalProperties": false
     },
     "correlation": {
       "type": "object",
+      "required": ["dump_phase", "dump_elapsed_s", "dump_timestamp_source",
+                   "dump_timestamp_warning", "inferred_trigger",
+                   "surrounding_events"],
       "properties": {
         "dump_phase":            { "type": "string" },
         "dump_elapsed_s":        { "type": "number" },
+        "dump_timestamp_source":  { "type": "string" },
+        "dump_timestamp_warning": { "type": ["string", "null"] },
         "oom_proximity_pct":     { "type": ["number", "null"] },
         "live_set_at_dump_mb":   { "type": ["number", "null"] },
         "inferred_trigger":      { "type": "string" },
@@ -67,16 +80,16 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "title", "description", "fixes"],
+        "required": ["id", "title", "description", "fixes", "pattern_source"],
         "properties": {
           "id":            { "type": "string" },
           "title":         { "type": "string" },
           "description":   { "type": "string" },
           "fixes":         { "type": "array", "items": { "type": "string" } },
-          "code_pointer":  { "type": ["string", "null"] }
+          "code_pointer":  { "type": ["string", "null"] },
+          "pattern_source": { "type": "string" }
         }
       }
     }
   }
 }
-

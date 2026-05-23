@@ -1,0 +1,28 @@
+{
+  "name": "jvm-memory-leak-debugger-copilot-extension",
+  "description": "GitHub Copilot Extension-style HTTP configuration for hosts that call tools through HTTPS routes.",
+  "host": "github-copilot-extension",
+  "transport": "http",
+  "server": {
+    "install": "pip install \"jvm-memory-leak-debugger[server]\"",
+    "command": "jvm-memory-leak-debugger-api",
+    "host": "127.0.0.1",
+    "port": 8080
+  },
+  "manifest_url": "https://YOUR-HOST.example.com/skill.json",
+  "health_url": "https://YOUR-HOST.example.com/health",
+  "tool_catalog_url": "https://YOUR-HOST.example.com/tools",
+  "tool_url_template": "https://YOUR-HOST.example.com/tools/{tool_name}",
+  "tools": [
+    "analyze_gc_log",
+    "extract_heap_suspects",
+    "correlate_dump_to_gc",
+    "generate_report"
+  ],
+  "preflight": [
+    "jvm-memory-leak-debugger-api --help",
+    "GET /health",
+    "GET /skill.json",
+    "GET /tools"
+  ]
+}

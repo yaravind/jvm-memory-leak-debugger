@@ -3,12 +3,54 @@ name: Test JVM Memory Leak Debugger Skill
 on:
   push:
     paths:
-      - 'skills/jvm-memory-leak-debugger/**'
+      - '**'
   pull_request:
     paths:
-      - 'skills/jvm-memory-leak-debugger/**'
+      - '**'
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Cross-platform smoke — proves the stdlib core, manifest contract, and
+  # installed console script work on the supported OS families without MAT.
+  # ---------------------------------------------------------------------------
+  cross-platform-smoke:
+    name: Cross-Platform Smoke (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.12"]
+
+    env:
+      PYTHONPATH: tools
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependency
+        run: python -m pip install pytest
+
+      - name: Validate manifest and portable core tests
+        run: python -m pytest tests/test_manifest.py tests/test_dispatch.py tests/test_gc_parser.py -v
+
+      - name: Install editable CLI without adapter dependencies
+        run: python -m pip install -e . --no-deps
+
+      - name: Installed console command help
+        run: jvm-memory-leak-debugger --help
+
+      - name: Runtime diagnostic smoke without MAT download
+        run: python -c "import mat_runner; s=mat_runner.runtime_diagnostics(); assert s['platform_supported'], s; assert s['can_auto_install_mat'], s; print(s['platform_key'], s['ready_for_analysis'])"
+
+      - name: Installed module import smoke
+        run: python -c "import dispatch, debug_memory_leak, gc_parser, mat_runner, pipeline; print(sorted(dispatch.TOOLS)); print(debug_memory_leak.main.__name__)"
+
   # ---------------------------------------------------------------------------
   # Unit tests — synthetic fixtures, fast, no external deps
   # ---------------------------------------------------------------------------
@@ -30,31 +72,56 @@ jobs:
       - name: Install pytest
         run: pip install pytest
 
-      - name: Run gc_parser unit tests
-        working-directory: skills/jvm-memory-leak-debugger
-        run: PYTHONPATH=tools python -m pytest tests/test_gc_parser.py -v
+      - name: Run unit tests
+        working-directory: .
+        run: make test
 
-      - name: Run reporter unit tests
-        working-directory: skills/jvm-memory-leak-debugger
-        run: PYTHONPATH=tools python -m pytest tests/test_reporter.py -v
+      - name: Validate manifests, schemas, and skill package docs
+        working-directory: .
+        run: make validate-manifests
 
-      - name: Validate skill.json
-        working-directory: skills/jvm-memory-leak-debugger
-        run: python -c "import json; d=json.load(open('skill.json')); assert d['schema_version']=='1.0'; assert len(d['tools'])==4; print('skill.json OK')"
-
-      - name: Validate JSON schemas
-        working-directory: skills/jvm-memory-leak-debugger
-        run: |
-          python -c "import json; json.load(open('schemas/gc_analysis_result.json')); print('gc_analysis_result.json OK')"
-          python -c "import json; json.load(open('schemas/memory_leak_report.json')); print('memory_leak_report.json OK')"
+      - name: Validate output contracts
+        working-directory: .
+        run: make validate-contracts
 
       - name: Check all tool modules importable
-        working-directory: skills/jvm-memory-leak-debugger/tools
+        working-directory: tools
         run: |
           python -c "import gc_parser; print('gc_parser OK')"
           python -c "import correlator; print('correlator OK')"
           python -c "import reporter; print('reporter OK')"
+          python -c "import pipeline; print('pipeline OK')"
+          python -c "import dispatch; print('dispatch OK')"
           python -c "import debug_memory_leak; print('debug_memory_leak OK')"
+
+  # ---------------------------------------------------------------------------
+  # Package smoke — proves a non-editable install carries the skill bundle data
+  # and can locate it outside a source checkout.
+  # ---------------------------------------------------------------------------
+  package-smoke:
+    name: Package Data Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package non-editably without adapter dependencies
+        run: python -m pip install . --no-deps
+
+      - name: Installed CLI help
+        run: jvm-memory-leak-debugger --help
+
+      - name: Installed skill bundle lookup outside repo
+        working-directory: /tmp
+        run: |
+          python -c "import skill_resources; p=skill_resources.find_repo_file('skill.json'); data=skill_resources.load_json('skill.json', {}); assert data['id']=='jvm-memory-leak-debugger'; assert len(data['tools'])==4; print(p)"
+          python -c "import pathlib, sys; root=pathlib.Path(sys.prefix)/'share'/'jvm-memory-leak-debugger'; required=['skill.json','instructions/system_prompt.md','references/fix_patterns.md','references/preflight_checklist.md','examples/custom_patterns.json','schemas/memory_leak_report.json','schemas/recommendation_patterns.json','harnesses/codex_skill.example.json','harnesses/copilot_extension.example.json','harnesses/direct_function_dispatch.example.json','harnesses/installed_commands.example.json','docs/adr/0003-use-schema-backed-custom-recommendation-patterns.md','docs/adr/0004-keep-full-heap-replay-as-external-release-evidence.md','docs/architecture/ISSUE_RESOLUTION_MATRIX.md','docs/architecture/MATURITY_COMPLETION_AUDIT.md','docs/architecture/RELEASE_EVIDENCE.md','docs/architecture/RELEASE_READINESS_CHECKLIST.md']; missing=[p for p in required if not (root/p).exists()]; assert not missing, missing; print(root)"
+
+      - name: Run packaged command smoke helper
+        run: python scripts/package_smoke.py
 
   # ---------------------------------------------------------------------------
   # E2E GC-log tests — uses the REAL gc-16615.log committed in tests/fixtures/
@@ -72,8 +139,8 @@ jobs:
 
       - name: Verify real GC log fixture is present
         run: |
-          test -f skills/jvm-memory-leak-debugger/tests/fixtures/gc-16615.log \
-            && echo "gc-16615.log present ($(wc -l < skills/jvm-memory-leak-debugger/tests/fixtures/gc-16615.log) lines)" \
+          test -f tests/fixtures/gc-16615.log \
+            && echo "gc-16615.log present ($(wc -l < tests/fixtures/gc-16615.log) lines)" \
             || (echo "ERROR: gc-16615.log missing from tests/fixtures/" && exit 1)
 
       - name: Set up Python ${{ matrix.python-version }}
@@ -85,7 +152,7 @@ jobs:
         run: pip install pytest
 
       - name: Run E2E GC-log tests (real incident fixture)
-        working-directory: skills/jvm-memory-leak-debugger
+        working-directory: .
         run: PYTHONPATH=tools python -m pytest tests/test_e2e_real_gc.py -v -m e2e_gc
 
   # ---------------------------------------------------------------------------
@@ -110,10 +177,33 @@ jobs:
         run: pip install pytest
 
       - name: Run full E2E pipeline (skip-mat)
-        working-directory: skills/jvm-memory-leak-debugger
+        working-directory: .
         env:
           HPROF_PATH: ${{ secrets.HPROF_PATH }}
         run: PYTHONPATH=tools python -m pytest tests/test_e2e_real_gc.py -v -m e2e_full
+
+  # ---------------------------------------------------------------------------
+  # Optional adapter smoke — proves HTTP and MCP wrappers stay thin and routed
+  # through the shared dispatch surface when their optional deps are installed.
+  # ---------------------------------------------------------------------------
+  adapter-smoke:
+    name: Optional Adapter Smoke
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: tools:.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install adapter extras and pytest
+        run: python -m pip install -e ".[server,mcp]" pytest httpx
+      - name: Installed adapter command help
+        run: |
+          jvm-memory-leak-debugger-api --help
+          jvm-memory-leak-debugger-mcp --help
+      - name: Run HTTP and MCP adapter smoke tests
+        run: make test-adapters
 
   # ---------------------------------------------------------------------------
   # Lint
@@ -128,6 +218,5 @@ jobs:
           python-version: "3.11"
       - run: pip install pyflakes
       - name: Pyflakes check
-        working-directory: skills/jvm-memory-leak-debugger/tools
-        run: python -m pyflakes gc_parser.py mat_runner.py correlator.py reporter.py debug_memory_leak.py
-
+        working-directory: .
+        run: make lint

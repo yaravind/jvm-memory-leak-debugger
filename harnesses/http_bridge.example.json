@@ -1,0 +1,20 @@
+{
+  "name": "jvm-memory-leak-debugger-http",
+  "description": "HTTP bridge harness configuration for hosts that cannot import local Python modules.",
+  "server": {
+    "command": "python3",
+    "args": [
+      "-m",
+      "uvicorn",
+      "server:app",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080"
+    ],
+    "cwd": "/ABSOLUTE/PATH/TO/jvm-memory-leak-debugger"
+  },
+  "manifest_url": "http://127.0.0.1:8080/skill.json",
+  "health_url": "http://127.0.0.1:8080/health",
+  "tool_url_template": "http://127.0.0.1:8080/tools/{tool_name}"
+}

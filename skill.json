@@ -43,6 +43,11 @@
             "type": "string",
             "description": "Absolute path to the .hprof heap dump file"
           },
+          "mat_home": {
+            "type": "string",
+            "description": "Optional path to an existing Eclipse MAT install root. If omitted, the pinned platform-specific MAT package is installed under the system temp directory.",
+            "default": null
+          },
           "mat_heap_gb": {
             "type": "integer",
             "description": "Max heap in GB for the MAT JVM process (default: 12)",
@@ -81,6 +86,11 @@
             "type": "number",
             "description": "Seconds around dump time to include as surrounding events (default: 60)",
             "default": 60
+          },
+          "dump_time": {
+            "type": "string",
+            "description": "Optional heap dump timestamp override as ISO-8601, epoch seconds, or epoch milliseconds. Used when the .hprof header timestamp is unavailable or should be overridden.",
+            "default": null
           }
         }
       },
@@ -116,10 +126,30 @@
             "description": "If true, skip running MAT (use existing suspects ZIP if present)",
             "default": false
           },
+          "mat_home": {
+            "type": "string",
+            "description": "Optional path to an existing Eclipse MAT install root. If omitted, the pinned platform-specific MAT package is installed under the system temp directory.",
+            "default": null
+          },
           "mat_heap_gb": {
             "type": "integer",
             "description": "Max heap in GB for the MAT JVM process",
             "default": 12
+          },
+          "timeout_s": {
+            "type": "integer",
+            "description": "Timeout in seconds for MAT analysis (default: 7200)",
+            "default": 7200
+          },
+          "patterns_file": {
+            "type": "string",
+            "description": "Optional path to a JSON file containing custom recommendation patterns. PATTERNS_FILE env var is also supported.",
+            "default": null
+          },
+          "dump_time": {
+            "type": "string",
+            "description": "Optional heap dump timestamp override as ISO-8601, epoch seconds, or epoch milliseconds.",
+            "default": null
           }
         }
       },
@@ -133,9 +163,9 @@
     "python": ">=3.9",
     "python_packages": [],
     "system": {
-      "java17_home": "Java 17+ required for Eclipse MAT. Set JAVA17_HOME env var or ensure /Library/Java/JavaVirtualMachines/microsoft-17.jdk exists.",
-      "curl": "Required for auto-downloading Eclipse MAT on first use (macOS/Linux).",
-      "hdiutil": "Required for unpacking MAT DMG on macOS. Linux uses tar."
+      "java17_home": "Java 17+ required for Eclipse MAT. Set JAVA17_HOME or JAVA_HOME, or ensure java 17+ is available on PATH.",
+      "curl": "Required for auto-downloading Eclipse MAT on first use.",
+      "mat_home": "Optional path to an existing Eclipse MAT install. The tool also supports auto-installing pinned MAT ZIP distributions for Linux, macOS, and Windows."
     }
   },
   "examples": [
@@ -158,4 +188,3 @@
     }
   ]
 }
-

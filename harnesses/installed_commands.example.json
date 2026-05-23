@@ -1,0 +1,21 @@
+{
+  "name": "jvm-memory-leak-debugger-installed",
+  "description": "Installed-command harness configuration for hosts that launch tools by command name instead of source-checkout paths.",
+  "commands": {
+    "cli": "jvm-memory-leak-debugger",
+    "http": "jvm-memory-leak-debugger-api",
+    "mcp": "jvm-memory-leak-debugger-mcp"
+  },
+  "preflight": [
+    "jvm-memory-leak-debugger --help",
+    "jvm-memory-leak-debugger --check-runtime --json",
+    "jvm-memory-leak-debugger-api --help",
+    "jvm-memory-leak-debugger-mcp --help"
+  ],
+  "http": {
+    "health_url": "http://127.0.0.1:8080/health",
+    "manifest_url": "http://127.0.0.1:8080/skill.json",
+    "tool_catalog_url": "http://127.0.0.1:8080/tools",
+    "tool_url_template": "http://127.0.0.1:8080/tools/{tool_name}"
+  }
+}

@@ -43,6 +43,15 @@ def test_gc_parser_basic():
     assert data["concurrent_abort_count"] == 1
 
 
+def test_parse_and_summarize_returns_dict():
+    path = _write_log(SAMPLE_GC_LOG)
+    data = gc_parser.parse_and_summarize(path)
+    os.unlink(path)
+
+    assert data["config"]["collector"] == "G1"
+    assert data["full_gc_count"] == 2
+
+
 def test_full_gc_stats():
     path = _write_log(SAMPLE_GC_LOG)
     summary = gc_parser.parse_gc_log(path)
@@ -85,4 +94,3 @@ def test_empty_log():
 
     assert data["full_gc_count"] == 0
     assert data["young_gc"]["count"] == 0
-

@@ -1,0 +1,5 @@
+# Core CLI parsing/reporting uses only the Python standard library.
+#
+# Install this file when you want every hosted adapter available locally.
+-r requirements-server.txt
+-r requirements-mcp.txt

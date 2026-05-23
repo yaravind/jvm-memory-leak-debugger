@@ -151,7 +151,7 @@ def test_real_gc_timeline_last_event(real_gc_data):
 def test_real_gc_severity_critical(real_gc_data):
     """33 Full GCs → CRITICAL severity."""
     mock_corr = {"oom_proximity_pct": 100.0}
-    badge = reporter._severity_badge(real_gc_data, mock_corr)
+    badge = reporter.severity_badge(real_gc_data, mock_corr)
     assert "CRITICAL" in badge
 
 
@@ -301,4 +301,3 @@ def test_real_full_pipeline_skip_mat(real_gc_data, tmp_path):
 
     # Severity should be CRITICAL (33 Full GCs)
     assert result["severity"] == "CRITICAL"
-

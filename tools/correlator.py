@@ -59,6 +59,72 @@ def _hprof_mtime(hprof_path: str) -> float:
     return Path(hprof_path).stat().st_mtime
 
 
+def _parse_hprof_header_timestamp(hprof_path: str) -> Optional[float]:
+    """
+    Return the HPROF header timestamp as epoch seconds, if present.
+
+    HPROF starts with a null-terminated format/version string, followed by a
+    4-byte identifier size and an 8-byte big-endian epoch-millisecond timestamp.
+    """
+    with open(hprof_path, "rb") as f:
+        header = f.read(128)
+
+    marker = b"\x00"
+    nul = header.find(marker)
+    if nul <= 0:
+        return None
+    if not header.startswith(b"JAVA PROFILE "):
+        return None
+
+    timestamp_offset = nul + 1 + 4
+    timestamp_end = timestamp_offset + 8
+    if len(header) < timestamp_end:
+        return None
+
+    timestamp_ms = int.from_bytes(header[timestamp_offset:timestamp_end], byteorder="big", signed=False)
+    if timestamp_ms <= 0:
+        return None
+    return timestamp_ms / 1000.0
+
+
+def _parse_dump_time_override(dump_time: str) -> float:
+    """Parse explicit dump time as epoch seconds, epoch milliseconds, or ISO-8601."""
+    value = dump_time.strip()
+    if not value:
+        raise ValueError("dump_time override is empty")
+
+    try:
+        numeric = float(value)
+        if numeric > 1_000_000_000_000:
+            return numeric / 1000.0
+        return numeric
+    except ValueError:
+        pass
+
+    iso_value = value[:-1] + "+00:00" if value.endswith("Z") else value
+    dt = datetime.fromisoformat(iso_value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def _resolve_dump_timestamp(
+    hprof_path: str,
+    dump_time: Optional[str] = None,
+) -> Tuple[float, str, Optional[str]]:
+    if dump_time:
+        return _parse_dump_time_override(dump_time), "override", None
+
+    hprof_epoch = _parse_hprof_header_timestamp(hprof_path)
+    if hprof_epoch is not None:
+        return hprof_epoch, "hprof_header", None
+
+    warning = (
+        "WARNING: using file mtime for hprof timestamp — transfer may have changed it"
+    )
+    return _hprof_mtime(hprof_path), "file_mtime", warning
+
+
 # ---------------------------------------------------------------------------
 # Main correlator
 # ---------------------------------------------------------------------------
@@ -68,6 +134,7 @@ def correlate(
     gc_log_path: str,
     hprof_path: str,
     window_s: float = 60.0,
+    dump_time: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Correlate the heap dump timestamp with the GC log.
@@ -78,6 +145,7 @@ def correlate(
     gc_log_path  : path to the GC log file
     hprof_path   : path to the .hprof file
     window_s     : seconds around dump time to include as surrounding events
+    dump_time    : optional explicit dump timestamp as ISO-8601 or epoch seconds
 
     Returns
     -------
@@ -89,9 +157,12 @@ def correlate(
         return {"error": "Could not parse wall-clock timestamp from GC log."}
 
     jvm_start_epoch, _ = anchor
-    dump_epoch = _hprof_mtime(hprof_path)
+    dump_epoch, timestamp_source, timestamp_warning = _resolve_dump_timestamp(
+        hprof_path=hprof_path,
+        dump_time=dump_time,
+    )
     dump_elapsed_s = dump_epoch - jvm_start_epoch.timestamp()
-    dump_wall = datetime.fromtimestamp(dump_epoch).isoformat()
+    dump_wall = datetime.fromtimestamp(dump_epoch, tz=timezone.utc).isoformat()
 
     # -- Find surrounding GC events --
     surrounding = [
@@ -174,6 +245,8 @@ def correlate(
     return {
         "dump_wall_time": dump_wall,
         "dump_elapsed_s": round(dump_elapsed_s, 1),
+        "dump_timestamp_source": timestamp_source,
+        "dump_timestamp_warning": timestamp_warning,
         "jvm_start_wall_time": jvm_start_epoch.isoformat(),
         "dump_phase": dump_phase,
         "inferred_trigger": trigger,
@@ -238,4 +311,3 @@ def _infer_trigger(
         )
 
     return " ".join(parts) if parts else "Unable to infer trigger from available data."
-

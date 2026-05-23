@@ -77,7 +77,10 @@ def test_build_report_structure():
         gc_log_path="/path/to/gc.log",
     )
     assert report["schema_version"] == "1.0"
+    assert "CRITICAL" in report["severity"]
     assert report["gc_analysis"]["full_gc_count"] == 33
+    assert report["heap_dump_analysis"]["analysis_status"] == "unknown"
+    assert report["heap_dump_analysis"]["error"] is None
     assert len(report["heap_dump_analysis"]["suspects"]) == 1
     assert report["correlation"]["dump_phase"] == "during_full_gc_storm"
     assert len(report["recommendations"]) > 0
@@ -95,7 +98,7 @@ def test_to_space_pattern_matched():
     assert "to_space_exhausted" in ids
 
 
-def test_jdbc_pattern_matched():
+def test_builtin_patterns_are_generic():
     report = reporter.build_report(
         gc_data=MOCK_GC_DATA,
         mat_findings=MOCK_MAT_FINDINGS,
@@ -104,11 +107,176 @@ def test_jdbc_pattern_matched():
         gc_log_path="/p",
     )
     ids = [r["id"] for r in report["recommendations"]]
-    assert "unbounded_jdbc_read" in ids
+    assert "large_thread_local_retention" in ids
+    assert "collection_builder_retention" in ids
+    assert "map_entry_overhead" in ids
+    assert "unbounded_jdbc_read" not in ids
+    assert all(r.get("code_pointer") is None for r in report["recommendations"])
+    assert all(r.get("pattern_source") == "builtin" for r in report["recommendations"])
+
+
+def test_custom_pattern_file_matched():
+    custom = {
+        "patterns": [
+            {
+                "id": "unbounded_jdbc_read",
+                "match_class": "JdbcDatasetReader|readResultSet",
+                "match_stack": "readResultSet|JdbcDatasetReader",
+                "title": "Custom JDBC reader materialises the result set",
+                "description": "Project-specific guidance from a custom pattern file.",
+                "fixes": ["Add a row cap in the project JDBC reader."],
+                "code_pointer": "src/main/scala/example/JdbcDatasetReader.scala:97",
+            }
+        ]
+    }
+
+    with tempfile.TemporaryDirectory() as td:
+        patterns_path = f"{td}/patterns.json"
+        with open(patterns_path, "w") as f:
+            json.dump(custom, f)
+
+        report = reporter.build_report(
+            gc_data=MOCK_GC_DATA,
+            mat_findings=MOCK_MAT_FINDINGS,
+            correlation=MOCK_CORRELATION,
+            hprof_path="/p",
+            gc_log_path="/p",
+            patterns_file=patterns_path,
+        )
+
+    rec = next(r for r in report["recommendations"] if r["id"] == "unbounded_jdbc_read")
+    assert rec["code_pointer"] == "src/main/scala/example/JdbcDatasetReader.scala:97"
+    assert rec["pattern_source"].endswith("patterns.json")
+
+
+def test_patterns_file_env_var(monkeypatch):
+    with tempfile.TemporaryDirectory() as td:
+        patterns_path = f"{td}/patterns.json"
+        with open(patterns_path, "w") as f:
+            json.dump(
+                [
+                    {
+                        "id": "custom_gc_pressure",
+                        "title": "Custom GC pressure rule",
+                        "description": "Matched from PATTERNS_FILE.",
+                        "fixes": ["Tune the workload."],
+                        "gc": {"min_full_gc_count": 1},
+                    }
+                ],
+                f,
+            )
+        monkeypatch.setenv("PATTERNS_FILE", patterns_path)
+
+        patterns = reporter.load_patterns()
+
+    assert any(p["id"] == "custom_gc_pressure" for p in patterns)
+
+
+def test_custom_pattern_file_rejects_invalid_regex():
+    custom = {
+        "patterns": [
+            {
+                "id": "broken_regex",
+                "match_class": "[unterminated",
+                "title": "Broken regex",
+                "description": "Should fail at load time.",
+                "fixes": ["Fix the regex."],
+            }
+        ]
+    }
+
+    with tempfile.TemporaryDirectory() as td:
+        patterns_path = f"{td}/patterns.json"
+        with open(patterns_path, "w") as f:
+            json.dump(custom, f)
+
+        try:
+            reporter.load_patterns(patterns_path)
+        except ValueError as e:
+            assert "match_class is not a valid regex" in str(e)
+        else:
+            raise AssertionError("invalid regex was accepted")
+
+
+def test_custom_pattern_file_rejects_matcherless_pattern():
+    custom = {
+        "patterns": [
+            {
+                "id": "matches_everything",
+                "title": "Too broad",
+                "description": "A matcherless custom pattern would match every report.",
+                "fixes": ["Add a matcher."],
+            }
+        ]
+    }
+
+    with tempfile.TemporaryDirectory() as td:
+        patterns_path = f"{td}/patterns.json"
+        with open(patterns_path, "w") as f:
+            json.dump(custom, f)
+
+        try:
+            reporter.load_patterns(patterns_path)
+        except ValueError as e:
+            assert "must define at least one matcher" in str(e)
+        else:
+            raise AssertionError("matcherless pattern was accepted")
+
+
+def test_custom_pattern_file_rejects_bad_gc_condition():
+    custom = {
+        "patterns": [
+            {
+                "id": "bad_gc",
+                "title": "Bad GC",
+                "description": "Invalid GC threshold.",
+                "fixes": ["Use a non-negative integer."],
+                "gc": {"min_full_gc_count": -1},
+            }
+        ]
+    }
+
+    with tempfile.TemporaryDirectory() as td:
+        patterns_path = f"{td}/patterns.json"
+        with open(patterns_path, "w") as f:
+            json.dump(custom, f)
+
+        try:
+            reporter.load_patterns(patterns_path)
+        except ValueError as e:
+            assert "gc.min_full_gc_count must be a non-negative integer" in str(e)
+        else:
+            raise AssertionError("bad GC condition was accepted")
+
+
+def test_custom_pattern_file_rejects_duplicate_builtin_id():
+    custom = {
+        "patterns": [
+            {
+                "id": "to_space_exhausted",
+                "title": "Duplicate built-in",
+                "description": "Duplicates should be explicit, not silently ignored.",
+                "fixes": ["Use a unique id."],
+                "gc": {"min_full_gc_count": 1},
+            }
+        ]
+    }
+
+    with tempfile.TemporaryDirectory() as td:
+        patterns_path = f"{td}/patterns.json"
+        with open(patterns_path, "w") as f:
+            json.dump(custom, f)
+
+        try:
+            reporter.load_patterns(patterns_path)
+        except ValueError as e:
+            assert "duplicate pattern id: to_space_exhausted" in str(e)
+        else:
+            raise AssertionError("duplicate pattern id was accepted")
 
 
 def test_severity_critical():
-    badge = reporter._severity_badge(MOCK_GC_DATA, MOCK_CORRELATION)
+    badge = reporter.severity_badge(MOCK_GC_DATA, MOCK_CORRELATION)
     assert "CRITICAL" in badge
 
 
@@ -119,6 +287,7 @@ def test_write_json_report():
         with open(path) as f:
             loaded = json.load(f)
         assert loaded["schema_version"] == "1.0"
+        assert "CRITICAL" in loaded["severity"]
         assert loaded["gc_analysis"]["to_space_exhausted_count"] == 31
 
 
@@ -130,5 +299,27 @@ def test_write_markdown_report():
         assert "# JVM Memory Leak Debug Report" in content
         assert "CRITICAL" in content
         assert "Full GC Storm Timeline" in content
+        assert "MAT analysis status" in content
         assert "Recommendations" in content
 
+
+def test_report_surfaces_heap_analysis_error_in_json_and_markdown():
+    findings = {
+        "suspects": [],
+        "histogram": [],
+        "suspects_zip": None,
+        "analysis_status": "failed",
+        "error": "Java 17+ is required to run Eclipse MAT.",
+    }
+
+    report = reporter.build_report(MOCK_GC_DATA, findings, MOCK_CORRELATION, "/p", "/p")
+
+    assert report["heap_dump_analysis"]["analysis_status"] == "failed"
+    assert "Java 17" in report["heap_dump_analysis"]["error"]
+
+    with tempfile.TemporaryDirectory() as td:
+        path = reporter.write_markdown_report(report, f"{td}/report.md")
+        content = open(path).read()
+
+    assert "Heap evidence gap" in content
+    assert "Java 17+ is required" in content

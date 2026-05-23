@@ -9,6 +9,7 @@ The Markdown surfaces the most actionable findings for a human operator.
 """
 
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -51,7 +52,7 @@ def _pct(v: Optional[float]) -> str:
     return f"{v:.1f}%"
 
 
-def _severity_badge(gc: Dict[str, Any], corr: Dict[str, Any]) -> str:
+def severity_badge(gc: Dict[str, Any], corr: Dict[str, Any]) -> str:
     """Return a severity label: CRITICAL / HIGH / MEDIUM / LOW."""
     full_count = gc.get("full_gc_count", 0)
     tse = gc.get("to_space_exhausted_count", 0)
@@ -69,74 +70,78 @@ def _severity_badge(gc: Dict[str, Any], corr: Dict[str, Any]) -> str:
 # Fix recommendations
 # ---------------------------------------------------------------------------
 
-_KNOWN_PATTERNS: List[Dict[str, Any]] = [
+_BUILTIN_PATTERN_SOURCE = "builtin"
+_PATTERN_PUBLIC_FIELDS = ("id", "title", "description", "fixes", "code_pointer", "pattern_source")
+
+_BUILTIN_PATTERNS: List[Dict[str, Any]] = [
     {
-        "id": "unbounded_jdbc_read",
-        "match_class": r"JdbcDatasetReader|readResultSet",
-        "match_stack": r"readResultSet|JdbcDatasetReader",
-        "title": "Unbounded JDBC ResultSet fully materialised into memory",
-        "description": (
-            "`JdbcDatasetReader.readResultSet()` streams an entire SQL table into a "
-            "`VectorBuilder[DataRow]` with no row limit. Each row is stored as an immutable "
-            "`HashMap[String, Option[String]]` producing ~6× object-count overhead per row "
-            "(Tuple2 + HashMap1 + HashTrieMap + Some + String + byte[] per cell). "
-            "With tens of millions of rows this exhausts even an 8 GB heap."
-        ),
-        "fixes": [
-            "Add a configurable `maxRows` guard in `readResultSet()` — fail fast with a "
-            "clear `IllegalStateException` if the row count exceeds the limit.",
-            "Replace `Map[String, Option[String]]` in `DataRow` with an `Array`-backed "
-            "structure keyed by column ordinal to eliminate per-row HashMap allocation overhead.",
-            "Consider lazy/streaming processing: process rows in a streaming `foldLeft` "
-            "rather than fully materialising into a `Vector`.",
-            "Add query validation: detect `SELECT *` without a `LIMIT` clause and emit a "
-            "WARNING or configurable hard-stop.",
-            "If the query is intentional for large datasets, consider a Spark-mode execution "
-            "path where the dataset is processed in partitions rather than fully in-driver memory.",
-        ],
-        "code_pointer": "src/main/scala/com/tccc/dna/diff/engine/local/JdbcDatasetReader.scala:97-105",
-    },
-    {
-        "id": "vectorbuilder_leak",
-        "match_class": r"VectorBuilder",
-        "match_stack": r"VectorBuilder",
-        "title": "scala.collection.immutable.VectorBuilder retaining entire dataset",
-        "description": (
-            "A single `VectorBuilder` on the `main` thread accumulated the entire result set "
-            "in the dominator tree. The builder is never flushed until `result()` is called, "
-            "which only happens after all rows are read — making the entire dataset live "
-            "simultaneously in memory."
-        ),
-        "fixes": [
-            "Use an iterator-based pipeline instead of a builder when processing large result sets.",
-            "If the full `Vector` is required downstream, cap input rows before building it.",
-        ],
-        "code_pointer": "src/main/scala/com/tccc/dna/diff/engine/local/JdbcDatasetReader.scala:97",
-    },
-    {
-        "id": "immutable_hashmap_overhead",
-        "match_class": r"HashMap\$HashMap1|HashMap\$HashTrieMap",
+        "id": "large_thread_local_retention",
+        "match_class": r"Thread|java\.lang\.Thread|main",
         "match_stack": r"",
-        "title": "Excessive immutable HashMap per-row overhead",
+        "match_text": r"keeps local variables|Thread Stack|local variables",
+        "title": "Thread-local retention is keeping a large object graph live",
         "description": (
-            "Each `DataRow` uses `Map[String, Option[String]]` which Scala implements as a "
-            "linked `HashMap1` / `HashTrieMap` tree. At 44M+ rows this creates ~60M+ "
-            "`HashMap1` objects, ~60M `Tuple2`, ~60M `Some`, and ~60M `String` instances, "
-            "totalling ~5-6 GB for a dataset that could be represented in ~500 MB with "
-            "columnar or array-backed storage."
+            "MAT reports that a thread stack or local variable is retaining most of the "
+            "heap. This usually means a request, batch job, query, parser, or collection "
+            "builder has materialised a large data set and has not released it yet."
         ),
         "fixes": [
-            "Replace `DataRow(values: Map[String, Option[String]])` with "
-            "`DataRow(ordinals: Array[Option[String]], schema: DatasetSchema)` — "
-            "reduce per-row allocation from ~6 objects to 1 array.",
-            "Use primitive-aware encoders for numeric columns to avoid boxing.",
+            "Inspect the stack frames for the retaining thread and identify the operation "
+            "that owns the live collection or object graph.",
+            "Replace full materialisation with streaming, pagination, chunked processing, "
+            "or bounded batching where possible.",
+            "Clear or narrow the lifetime of large local variables before long waits, "
+            "blocking calls, or retries.",
+            "Add an input-size guard so unexpected production data volume fails with a "
+            "clear error before exhausting heap.",
         ],
-        "code_pointer": "src/main/scala/com/tccc/dna/diff/domain/DataRow.scala",
+        "code_pointer": None,
+    },
+    {
+        "id": "collection_builder_retention",
+        "match_class": r"VectorBuilder|ArrayList|HashMap|HashSet|ListBuffer|StringBuilder|ByteArrayOutputStream",
+        "match_stack": r"",
+        "match_text": r"",
+        "title": "Collection or buffer builder is retaining accumulated data",
+        "description": (
+            "A collection, map, string, byte buffer, or builder appears in the retained "
+            "object graph. Builders are expected to hold everything added to them until "
+            "they are flushed, drained, or converted, so they commonly expose unbounded "
+            "batching and aggregation problems."
+        ),
+        "fixes": [
+            "Bound the collection size and fail fast when the limit is exceeded.",
+            "Process records incrementally instead of retaining the entire input in one builder.",
+            "For unavoidable large results, spill to disk or use a distributed/partitioned "
+            "execution path instead of driver memory.",
+        ],
+        "code_pointer": None,
+    },
+    {
+        "id": "map_entry_overhead",
+        "match_class": r"HashMap|LinkedHashMap|ConcurrentHashMap|TreeMap|Tuple2|Map\$|HashTrieMap",
+        "match_stack": r"",
+        "match_text": r"",
+        "title": "Map-heavy representation is amplifying per-entry memory cost",
+        "description": (
+            "Map implementations can create several objects per logical entry. When a "
+            "heap dump is dominated by map nodes, entries, tuples, boxed values, or "
+            "strings, the logical payload may be much smaller than the retained heap."
+        ),
+        "fixes": [
+            "Replace per-row or per-cell maps with array-backed, columnar, ordinal, or "
+            "primitive-aware structures for hot paths.",
+            "Intern or deduplicate repeated keys and categorical values only after measuring the tradeoff.",
+            "Prefer compact domain objects over generic maps when the schema is known.",
+        ],
+        "code_pointer": None,
     },
     {
         "id": "to_space_exhausted",
         "match_class": r"",
         "match_stack": r"",
+        "match_text": r"",
+        "gc": {"min_to_space_exhausted": 1},
         "title": "Repeated To-space exhaustion causing Full GC cascade",
         "description": (
             "G1 GC reported repeated 'To-space exhausted' events, meaning the JVM had no "
@@ -149,14 +154,129 @@ _KNOWN_PATTERNS: List[Dict[str, Any]] = [
             "Reduce the live-set size (see object graph fixes above) — this is the root cause.",
             "As a short-term mitigation, increase `-Xmx` to give G1 more headroom, but note "
             "this only delays the OOM if the source data volume grows further.",
-            "The long-term fix is row-capped or streaming JDBC reads.",
+            "The long-term fix is reducing the retained live set: stream, partition, cap, "
+            "or compact the workload that is keeping objects live.",
         ],
         "code_pointer": None,
     },
 ]
 
 
-def _match_patterns(suspects: List[Dict[str, Any]], gc_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def load_patterns(patterns_file: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Return built-in patterns plus optional user-supplied JSON patterns."""
+    patterns = [_with_source(p, _BUILTIN_PATTERN_SOURCE) for p in _BUILTIN_PATTERNS]
+    seen_ids = {p["id"] for p in patterns}
+    path = patterns_file or os.environ.get("PATTERNS_FILE")
+    if not path:
+        return patterns
+
+    custom_path = Path(path)
+    with open(custom_path) as f:
+        loaded = json.load(f)
+
+    custom_patterns = loaded.get("patterns") if isinstance(loaded, dict) else loaded
+    if not isinstance(custom_patterns, list):
+        raise ValueError("patterns file must contain a list or an object with a 'patterns' list")
+
+    source = str(custom_path)
+    validated_custom = []
+    for idx, pattern in enumerate(custom_patterns):
+        validated = _validate_pattern(pattern, source, idx)
+        if validated["id"] in seen_ids:
+            raise ValueError(f"duplicate pattern id: {validated['id']}")
+        seen_ids.add(validated["id"])
+        validated_custom.append(validated)
+    return patterns + validated_custom
+
+
+def _with_source(pattern: Dict[str, Any], source: str) -> Dict[str, Any]:
+    enriched = dict(pattern)
+    enriched["pattern_source"] = source
+    return enriched
+
+
+def _validate_pattern(pattern: Dict[str, Any], source: str, index: int = 0) -> Dict[str, Any]:
+    label = f"pattern[{index}]"
+    if not isinstance(pattern, dict):
+        raise ValueError(f"{label} must be an object")
+    for field in ("id", "title", "description", "fixes"):
+        if field not in pattern:
+            raise ValueError(f"{label} missing required field: {field}")
+    if not isinstance(pattern["fixes"], list) or not all(isinstance(f, str) for f in pattern["fixes"]):
+        raise ValueError(f"{label} fixes must be a list of strings")
+
+    validated = {
+        "id": str(pattern["id"]),
+        "title": str(pattern["title"]),
+        "description": str(pattern["description"]),
+        "fixes": list(pattern["fixes"]),
+        "code_pointer": pattern.get("code_pointer"),
+        "match_class": str(pattern.get("match_class", "")),
+        "match_stack": str(pattern.get("match_stack", "")),
+        "match_text": str(pattern.get("match_text", "")),
+        "gc": pattern.get("gc", {}),
+        "pattern_source": source,
+    }
+    if validated["code_pointer"] is not None:
+        validated["code_pointer"] = str(validated["code_pointer"])
+    if not isinstance(validated["gc"], dict):
+        raise ValueError(f"{label} gc field must be an object when present")
+    _validate_gc_conditions(validated["gc"], label)
+    _validate_regex_fields(validated, label)
+    if not any(validated.get(field) for field in ("match_class", "match_stack", "match_text")) and not validated["gc"]:
+        raise ValueError(
+            f"{label} must define at least one matcher: match_class, match_stack, match_text, or gc"
+        )
+    return validated
+
+
+def _validate_gc_conditions(conditions: Dict[str, Any], label: str) -> None:
+    allowed = {"min_to_space_exhausted", "min_full_gc_count", "min_concurrent_abort_count"}
+    for key, value in conditions.items():
+        if key not in allowed:
+            raise ValueError(f"{label} gc contains unsupported condition: {key}")
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"{label} gc.{key} must be a non-negative integer")
+
+
+def _validate_regex_fields(pattern: Dict[str, Any], label: str) -> None:
+    for field in ("match_class", "match_stack", "match_text"):
+        value = pattern.get(field, "")
+        if not value:
+            continue
+        try:
+            re.compile(value)
+        except re.error as e:
+            raise ValueError(f"{label} {field} is not a valid regex: {e}") from e
+
+
+def _public_recommendation(pattern: Dict[str, Any]) -> Dict[str, Any]:
+    return {field: pattern.get(field) for field in _PATTERN_PUBLIC_FIELDS if field in pattern}
+
+
+def _gc_conditions_match(pattern: Dict[str, Any], gc_data: Dict[str, Any]) -> bool:
+    conditions = pattern.get("gc") or {}
+    min_to_space = conditions.get("min_to_space_exhausted")
+    if min_to_space is not None and gc_data.get("to_space_exhausted_count", 0) < min_to_space:
+        return False
+    min_full_gc = conditions.get("min_full_gc_count")
+    if min_full_gc is not None and gc_data.get("full_gc_count", 0) < min_full_gc:
+        return False
+    min_abort = conditions.get("min_concurrent_abort_count")
+    if min_abort is not None and gc_data.get("concurrent_abort_count", 0) < min_abort:
+        return False
+    return True
+
+
+def _regex_matches(pattern: str, text: str) -> bool:
+    return not pattern or re.search(pattern, text, re.IGNORECASE) is not None
+
+
+def _match_patterns(
+    suspects: List[Dict[str, Any]],
+    gc_data: Dict[str, Any],
+    patterns: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     """Return applicable fix recommendations based on suspect classes and stack frames."""
     matched: List[Dict[str, Any]] = []
     seen_ids: set = set()
@@ -172,20 +292,16 @@ def _match_patterns(suspects: List[Dict[str, Any]], gc_data: Dict[str, Any]) -> 
     )
     combined = all_class_text + " " + all_stack_text + " " + histogram_text
 
-    # Always include to_space_exhausted if present
-    if gc_data.get("to_space_exhausted_count", 0) > 0:
-        for p in _KNOWN_PATTERNS:
-            if p["id"] == "to_space_exhausted":
-                matched.append(p)
-                seen_ids.add(p["id"])
-
-    for pattern in _KNOWN_PATTERNS:
+    active_patterns = patterns if patterns is not None else load_patterns()
+    for pattern in active_patterns:
         if pattern["id"] in seen_ids:
             continue
-        class_ok = not pattern["match_class"] or re.search(pattern["match_class"], combined)
-        stack_ok = not pattern["match_stack"] or re.search(pattern["match_stack"], combined)
-        if class_ok and stack_ok:
-            matched.append(pattern)
+        gc_ok = _gc_conditions_match(pattern, gc_data)
+        class_ok = _regex_matches(pattern.get("match_class", ""), combined)
+        stack_ok = _regex_matches(pattern.get("match_stack", ""), all_stack_text)
+        text_ok = _regex_matches(pattern.get("match_text", ""), combined)
+        if gc_ok and class_ok and stack_ok and text_ok:
+            matched.append(_public_recommendation(pattern))
             seen_ids.add(pattern["id"])
 
     return matched
@@ -201,21 +317,27 @@ def build_report(
     correlation: Dict[str, Any],
     hprof_path: str,
     gc_log_path: str,
+    patterns_file: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assemble the full structured report dict."""
     suspects = mat_findings.get("suspects", [])
     histogram = mat_findings.get("histogram", [])
-    recommendations = _match_patterns(suspects, {**mat_findings, **gc_data})
+    patterns = load_patterns(patterns_file)
+    recommendations = _match_patterns(suspects, {**mat_findings, **gc_data}, patterns)
+    severity = severity_badge(gc_data, correlation)
 
     return {
         "schema_version": "1.0",
         "generated_at": datetime.now().isoformat(),
+        "severity": severity,
         "inputs": {
             "hprof": hprof_path,
             "gc_log": gc_log_path,
         },
         "gc_analysis": gc_data,
         "heap_dump_analysis": {
+            "analysis_status": mat_findings.get("analysis_status", "unknown"),
+            "error": mat_findings.get("error"),
             "suspects": suspects,
             "histogram": histogram[:20],
             "suspects_zip": mat_findings.get("suspects_zip"),
@@ -238,6 +360,8 @@ def write_markdown_report(report: Dict[str, Any], output_path: str) -> str:
     suspects = report["heap_dump_analysis"]["suspects"]
     histogram = report["heap_dump_analysis"]["histogram"]
     recs = report["recommendations"]
+    heap_status = report["heap_dump_analysis"].get("analysis_status", "unknown")
+    heap_error = report["heap_dump_analysis"].get("error")
 
     lines: List[str] = []
 
@@ -257,7 +381,7 @@ def write_markdown_report(report: Dict[str, Any], output_path: str) -> str:
     lines.append(f"|------|-------|")
     lines.append(f"| Heap dump | `{report['inputs']['hprof']}` |")
     lines.append(f"| GC log    | `{report['inputs']['gc_log']}` |")
-    lines.append(f"| Severity  | {_severity_badge(gc, corr)} |")
+    lines.append(f"| Severity  | {report.get('severity', severity_badge(gc, corr))} |")
     blank()
 
     # ---- Executive summary ----
@@ -317,6 +441,12 @@ def write_markdown_report(report: Dict[str, Any], output_path: str) -> str:
 
     # ---- Leak suspects ----
     h(2, "Heap Dump: Leak Suspects")
+    if heap_status:
+        p_line(f"**MAT analysis status:** `{heap_status}`")
+        blank()
+    if heap_error:
+        p_line(f"**Heap evidence gap:** {heap_error}")
+        blank()
     if not suspects:
         p_line("_No suspects extracted. Check the suspects_zip for manual inspection._")
     for s in suspects[:3]:
@@ -397,4 +527,3 @@ def write_markdown_report(report: Dict[str, Any], output_path: str) -> str:
     with open(p, "w") as f:
         f.write(content)
     return str(p)
-

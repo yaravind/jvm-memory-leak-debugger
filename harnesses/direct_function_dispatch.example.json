@@ -1,0 +1,16 @@
+{
+  "name": "jvm-memory-leak-debugger-direct",
+  "description": "Local non-MCP harness configuration. Add the tools directory to the host Python path and call dispatch.dispatch_tool(name, params).",
+  "python_path": "/ABSOLUTE/PATH/TO/jvm-memory-leak-debugger/tools",
+  "manifest": "/ABSOLUTE/PATH/TO/jvm-memory-leak-debugger/skill.json",
+  "dispatcher": {
+    "module": "dispatch",
+    "function": "dispatch_tool"
+  },
+  "tools": [
+    "analyze_gc_log",
+    "extract_heap_suspects",
+    "correlate_dump_to_gc",
+    "generate_report"
+  ]
+}

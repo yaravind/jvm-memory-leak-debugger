@@ -1,0 +1,113 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jvm-memory-leak-debugger"
+version = "1.0.0"
+description = "Portable JVM memory leak debugging skill and CLI for heap dumps and G1 GC logs."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+  { name = "data-diff" }
+]
+keywords = ["java", "jvm", "memory", "debugging", "gc", "heap", "mat"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Debuggers",
+  "Topic :: System :: Monitoring"
+]
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0.0; python_version >= '3.10'"]
+server = ["fastapi>=0.111.0", "uvicorn[standard]>=0.29.0"]
+all = ["mcp>=1.0.0; python_version >= '3.10'", "fastapi>=0.111.0", "uvicorn[standard]>=0.29.0"]
+
+[project.scripts]
+jvm-memory-leak-debugger = "debug_memory_leak:main"
+jvm-memory-leak-debugger-api = "server_adapter:main"
+jvm-memory-leak-debugger-mcp = "mcp_adapter:main"
+
+[project.urls]
+Homepage = "https://github.com/yaravind/jvm-memory-leak-debugger"
+Issues = "https://github.com/yaravind/jvm-memory-leak-debugger/issues"
+
+[tool.setuptools]
+py-modules = [
+  "correlator",
+  "debug_memory_leak",
+  "dispatch",
+  "gc_parser",
+  "mat_runner",
+  "pipeline",
+  "reporter",
+  "schema_validator",
+  "server_adapter",
+  "skill_resources",
+  "mcp_adapter"
+]
+
+[tool.setuptools.package-dir]
+"" = "tools"
+
+[tool.setuptools.data-files]
+"share/jvm-memory-leak-debugger" = [
+  "README.md",
+  "SKILL.md",
+  "skill.json"
+]
+"share/jvm-memory-leak-debugger/instructions" = [
+  "instructions/system_prompt.md"
+]
+"share/jvm-memory-leak-debugger/references" = [
+  "references/fix_patterns.md",
+  "references/g1gc_phases.md",
+  "references/harness_configuration.md",
+  "references/jvm_flags.md",
+  "references/mat_installation.md",
+  "references/preflight_checklist.md"
+]
+"share/jvm-memory-leak-debugger/assets" = [
+  "assets/report_template.md",
+  "assets/skill_card.md"
+]
+"share/jvm-memory-leak-debugger/examples" = [
+  "examples/conversation_examples.md",
+  "examples/custom_patterns.json"
+]
+"share/jvm-memory-leak-debugger/schemas" = [
+  "schemas/gc_analysis_result.json",
+  "schemas/memory_leak_report.json",
+  "schemas/recommendation_patterns.json"
+]
+"share/jvm-memory-leak-debugger/harnesses" = [
+  "harnesses/claude_desktop_config.example.json",
+  "harnesses/codex_skill.example.json",
+  "harnesses/copilot_extension.example.json",
+  "harnesses/direct_function_dispatch.example.json",
+  "harnesses/http_bridge.example.json",
+  "harnesses/installed_commands.example.json"
+]
+"share/jvm-memory-leak-debugger/docs/adr" = [
+  "docs/adr/0000-record-architecture-decisions-template.md",
+  "docs/adr/0001-use-pinned-cross-platform-mat-zip-distributions.md",
+  "docs/adr/0002-use-pyproject-for-portable-cli-and-optional-adapter-extras.md",
+  "docs/adr/0003-use-schema-backed-custom-recommendation-patterns.md",
+  "docs/adr/0004-keep-full-heap-replay-as-external-release-evidence.md"
+]
+"share/jvm-memory-leak-debugger/docs/architecture" = [
+  "docs/architecture/ISSUE_RESOLUTION_MATRIX.md",
+  "docs/architecture/JVM_MEMORY_LEAK_DEBUGGER_MATURITY_PRD.md",
+  "docs/architecture/MATURITY_COMPLETION_AUDIT.md",
+  "docs/architecture/RELEASE_EVIDENCE.md",
+  "docs/architecture/RELEASE_READINESS_CHECKLIST.md"
+]

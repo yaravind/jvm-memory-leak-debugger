@@ -19,52 +19,127 @@ MAT version and URLs are pinned; bump MAT_VERSION / SHA256 to update.
 """
 
 import hashlib
-import json
 import os
+import platform
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 import zipfile
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 # ---------------------------------------------------------------------------
-# MAT distribution constants  (aarch64 macOS)
+# MAT distribution constants
 # ---------------------------------------------------------------------------
 
 MAT_VERSION = "1.16.1.20250109"
 MAT_VERSION_SHORT = "1.16.1"
-MAT_URL_TEMPLATE = (
-    "https://download.eclipse.org/mat/{short}/rcp/"
-    "MemoryAnalyzer-{full}-macosx.cocoa.{arch}.dmg"
-)
-MAT_SHA256 = {
-    "aarch64": "01ac5effe6479f013c32c2f8d75ed08e7ec0f848f5ce301b5fa47de7f34c2654",
-    "x86_64":  "9cd8ad2e726da6e1300bdb115cc22c929e69707de56cc2873cac5067848254ea",
+MAT_DOWNLOAD_BASE = f"https://download.eclipse.org/mat/{MAT_VERSION_SHORT}/rcp"
+
+
+@dataclass(frozen=True)
+class MatDistribution:
+    platform_key: str
+    archive_name: str
+    sha256: str
+
+    @property
+    def url(self) -> str:
+        return f"{MAT_DOWNLOAD_BASE}/{self.archive_name}"
+
+
+MAT_DISTRIBUTIONS: Dict[str, MatDistribution] = {
+    "linux-aarch64": MatDistribution(
+        platform_key="linux-aarch64",
+        archive_name=f"MemoryAnalyzer-{MAT_VERSION}-linux.gtk.aarch64.zip",
+        sha256="1dbd98be41c50a14d2a1196f0f3fe19908506a025959f60879325bde0473cd9d",
+    ),
+    "linux-x86_64": MatDistribution(
+        platform_key="linux-x86_64",
+        archive_name=f"MemoryAnalyzer-{MAT_VERSION}-linux.gtk.x86_64.zip",
+        sha256="7c7bc3457e08bdcd187fdafb28573b00e8e9f56b46a872fb63dbbaf7f508f01e",
+    ),
+    "macos-aarch64": MatDistribution(
+        platform_key="macos-aarch64",
+        archive_name=f"MemoryAnalyzer-{MAT_VERSION}-macosx.cocoa.aarch64.zip",
+        sha256="99368c4a4b61593555c1d101acb6785afe0b927dbf4c33246ac647a849732101",
+    ),
+    "macos-x86_64": MatDistribution(
+        platform_key="macos-x86_64",
+        archive_name=f"MemoryAnalyzer-{MAT_VERSION}-macosx.cocoa.x86_64.zip",
+        sha256="7b4bff9866c6341f4d26455baef88c7eabbb424bb515e8d993026f706a66d14d",
+    ),
+    "windows-x86_64": MatDistribution(
+        platform_key="windows-x86_64",
+        archive_name=f"MemoryAnalyzer-{MAT_VERSION}-win32.win32.x86_64.zip",
+        sha256="79e0b0c5c25fe718e58a3d42135b537c0dd3b2f3cb453c5e9a91d3b7a913ea7d",
+    ),
 }
 
-DEFAULT_MAT_HOME = Path("/private/tmp/mat/MemoryAnalyzer.app")
+DEFAULT_MAT_HOME = Path(tempfile.gettempdir()) / "eclipse-mat" / MAT_VERSION
 EQUINOX_JAR_GLOB = "org.eclipse.equinox.launcher_*.jar"
-JAVA17_KNOWN = Path("/Library/Java/JavaVirtualMachines/microsoft-17.jdk/Contents/Home")
 
 
 # ---------------------------------------------------------------------------
 # Java 17 discovery
 # ---------------------------------------------------------------------------
 
+def _java_bin(java_home: Path) -> Path:
+    exe = "java.exe" if os.name == "nt" else "java"
+    return java_home / "bin" / exe
+
+
+def _java_major_version(java_bin: Path) -> Optional[int]:
+    try:
+        result = subprocess.run(
+            [str(java_bin), "-version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+
+    version_text = result.stderr or result.stdout
+    m = re.search(r'version "(\d+)(?:\.(\d+))?', version_text)
+    if not m:
+        return None
+    major = int(m.group(1))
+    if major == 1 and m.group(2):
+        return int(m.group(2))
+    return major
+
+
+def _valid_java_home(java_home: Path) -> bool:
+    return _java_bin(java_home).exists() and (_java_major_version(_java_bin(java_home)) or 0) >= 17
+
+
+def _java_home_from_path() -> Optional[Path]:
+    java = shutil.which("java")
+    if not java:
+        return None
+    java_bin = Path(java).resolve()
+    if (_java_major_version(java_bin) or 0) < 17:
+        return None
+    return java_bin.parent.parent
+
+
 def _find_java17() -> Path:
     """Return path to a Java 17+ JAVA_HOME or raise EnvironmentError."""
-    # 1. Explicit env var
-    if "JAVA17_HOME" in os.environ:
-        return Path(os.environ["JAVA17_HOME"])
-    # 2. Known macOS location (Microsoft JDK 17)
-    if JAVA17_KNOWN.exists():
-        return JAVA17_KNOWN
-    # 3. /usr/libexec/java_home -v 17
+    for env_var in ("JAVA17_HOME", "JAVA_HOME"):
+        if env_var in os.environ:
+            p = Path(os.environ[env_var])
+            if _valid_java_home(p):
+                return p
+            raise EnvironmentError(
+                f"{env_var} is set to {p}, but it does not contain Java 17+."
+            )
+
+    # macOS native JDK discovery.
     try:
         result = subprocess.run(
             ["/usr/libexec/java_home", "-v", "17"],
@@ -72,24 +147,24 @@ def _find_java17() -> Path:
         )
         if result.returncode == 0:
             p = Path(result.stdout.strip())
-            if p.exists():
+            if _valid_java_home(p):
                 return p
     except Exception:
         pass
-    # 4. JAVA_HOME env
-    if "JAVA_HOME" in os.environ:
-        p = Path(os.environ["JAVA_HOME"])
-        if p.exists():
-            out = subprocess.run(
-                [str(p / "bin" / "java"), "-version"],
-                capture_output=True, text=True
-            ).stderr
-            if re.search(r"version \"1[7-9]|version \"[2-9][0-9]", out):
-                return p
+
+    path_home = _java_home_from_path()
+    if path_home is not None:
+        return path_home
+
     raise EnvironmentError(
         "Java 17+ is required to run Eclipse MAT 1.16.\n"
-        "Set JAVA17_HOME to your JDK 17+ home directory, or install it."
+        "Set JAVA17_HOME or JAVA_HOME to your JDK 17+ home directory, "
+        "or ensure a Java 17+ executable is available on PATH."
     )
+
+
+def _curl_available() -> bool:
+    return shutil.which("curl") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -97,9 +172,37 @@ def _find_java17() -> Path:
 # ---------------------------------------------------------------------------
 
 def _arch() -> str:
-    import platform
     machine = platform.machine().lower()
-    return "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
+    if machine in ("arm64", "aarch64"):
+        return "aarch64"
+    if machine in ("amd64", "x86_64"):
+        return "x86_64"
+    if machine in ("ppc64le", "powerpc64le"):
+        return "ppc64le"
+    return machine
+
+
+def _platform_key() -> str:
+    system = platform.system().lower()
+    arch = _arch()
+    if system == "darwin":
+        return f"macos-{arch}"
+    if system == "linux":
+        return f"linux-{arch}"
+    if system == "windows":
+        return f"windows-{arch}"
+    return f"{system}-{arch}"
+
+
+def _mat_distribution() -> MatDistribution:
+    platform_key = _platform_key()
+    if platform_key not in MAT_DISTRIBUTIONS:
+        supported = ", ".join(sorted(MAT_DISTRIBUTIONS))
+        raise RuntimeError(
+            f"No Eclipse MAT {MAT_VERSION} distribution configured for "
+            f"{platform_key}. Supported platforms: {supported}."
+        )
+    return MAT_DISTRIBUTIONS[platform_key]
 
 
 def _verify_sha256(path: Path, expected: str) -> bool:
@@ -110,55 +213,68 @@ def _verify_sha256(path: Path, expected: str) -> bool:
     return h.hexdigest() == expected
 
 
-def _download_mat(mat_home: Path) -> None:
-    """Download MAT DMG, verify checksum, mount & copy into mat_home."""
-    arch = _arch()
-    url = MAT_URL_TEMPLATE.format(
-        short=MAT_VERSION_SHORT, full=MAT_VERSION, arch=arch
-    )
-    expected_sha = MAT_SHA256[arch]
+def _eclipse_dir(mat_home: Path) -> Optional[Path]:
+    candidates = [
+        mat_home,
+        mat_home / "mat",
+        mat_home / "MemoryAnalyzer.app" / "Contents" / "Eclipse",
+        mat_home / "Contents" / "Eclipse",
+    ]
+    for candidate in candidates:
+        if (candidate / "plugins").exists():
+            return candidate
+    return None
 
-    print(f"[mat_runner] Downloading Eclipse MAT {MAT_VERSION} for {arch}…")
-    print(f"[mat_runner]   {url}")
+
+def _copy_extracted_root(extract_dir: Path, mat_home: Path) -> None:
+    roots = [p for p in extract_dir.iterdir() if p.name != "__MACOSX"]
+    if len(roots) != 1:
+        raise RuntimeError(
+            f"Expected one top-level MAT directory in archive, found: "
+            f"{', '.join(p.name for p in roots)}"
+        )
+
+    if mat_home.exists():
+        shutil.rmtree(mat_home)
+    mat_home.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(roots[0], mat_home)
+
+
+def _download_mat(mat_home: Path) -> None:
+    """Download, verify, and unpack the configured MAT ZIP distribution."""
+    dist = _mat_distribution()
+
+    print(f"[mat_runner] Downloading Eclipse MAT {MAT_VERSION} for {dist.platform_key}...")
+    print(f"[mat_runner]   {dist.url}")
 
     with tempfile.TemporaryDirectory() as td:
-        dmg = Path(td) / "MemoryAnalyzer.dmg"
+        archive = Path(td) / dist.archive_name
         subprocess.run(
-            ["curl", "-L", "-o", str(dmg), url],
+            ["curl", "-L", "-o", str(archive), dist.url],
             check=True
         )
-        if not _verify_sha256(dmg, expected_sha):
+        if not _verify_sha256(archive, dist.sha256):
             raise RuntimeError(
-                f"SHA-256 mismatch for downloaded MAT DMG.\n"
-                f"Expected: {expected_sha}\n"
-                f"Got:      {hashlib.sha256(dmg.read_bytes()).hexdigest()}"
+                f"SHA-256 mismatch for downloaded MAT archive.\n"
+                f"Expected: {dist.sha256}\n"
+                f"Got:      {hashlib.sha256(archive.read_bytes()).hexdigest()}"
             )
-        mount_pt = Path(td) / "mnt"
-        mount_pt.mkdir()
-        subprocess.run(
-            ["hdiutil", "attach", str(dmg), "-mountpoint", str(mount_pt),
-             "-nobrowse", "-quiet"],
-            check=True
-        )
-        try:
-            src = mount_pt / "MemoryAnalyzer.app"
-            mat_home.parent.mkdir(parents=True, exist_ok=True)
-            if mat_home.exists():
-                shutil.rmtree(mat_home)
-            shutil.copytree(src, mat_home)
-        finally:
-            subprocess.run(
-                ["hdiutil", "detach", str(mount_pt), "-quiet"],
-                check=False
-            )
+        extract_dir = Path(td) / "extract"
+        extract_dir.mkdir()
+        with zipfile.ZipFile(archive) as zf:
+            zf.extractall(extract_dir)
+        _copy_extracted_root(extract_dir, mat_home)
     print(f"[mat_runner] MAT installed at: {mat_home}")
 
 
 def ensure_mat(mat_home: Path = DEFAULT_MAT_HOME) -> Path:
-    """Return the Eclipse dir inside MAT, downloading if absent."""
-    eclipse_dir = mat_home / "Contents" / "Eclipse"
-    if not eclipse_dir.exists():
+    """Return the Eclipse directory inside MAT, downloading if absent."""
+    eclipse_dir = _eclipse_dir(mat_home)
+    if eclipse_dir is None:
         _download_mat(mat_home)
+        eclipse_dir = _eclipse_dir(mat_home)
+    if eclipse_dir is None:
+        raise RuntimeError(f"Eclipse MAT installation is invalid: {mat_home}")
     return eclipse_dir
 
 
@@ -171,9 +287,112 @@ def _equinox_jar(eclipse_dir: Path) -> Path:
     return sorted(matches)[-1]
 
 
+def runtime_diagnostics(mat_home: Path = DEFAULT_MAT_HOME) -> Dict[str, Any]:
+    """
+    Return local Java/MAT readiness without downloading MAT or reading a heap.
+
+    A host is ready for first-run analysis when the platform is supported and
+    Java 17+ is discoverable. Existing MAT installation details are reported
+    separately because first use may auto-download the pinned MAT archive.
+    """
+    status: Dict[str, Any] = {
+        "platform_key": _platform_key(),
+        "platform_supported": False,
+        "mat_version": MAT_VERSION_SHORT,
+        "mat_home": str(Path(mat_home)),
+        "mat_installed": False,
+        "mat_eclipse_dir": None,
+        "equinox_launcher_found": False,
+        "java_home": None,
+        "java_major_version": None,
+        "java_17_plus": False,
+        "curl_available": _curl_available(),
+        "can_auto_install_mat": False,
+        "ready_for_analysis": False,
+        "errors": [],
+    }
+
+    try:
+        dist = _mat_distribution()
+        status.update({
+            "platform_supported": True,
+            "mat_archive": dist.archive_name,
+            "mat_download_url": dist.url,
+            "mat_archive_sha256": dist.sha256,
+        })
+    except RuntimeError as exc:
+        status["errors"].append(str(exc))
+
+    try:
+        java_home = _find_java17()
+        java_bin = _java_bin(java_home)
+        java_major = _java_major_version(java_bin)
+        status.update({
+            "java_home": str(java_home),
+            "java_major_version": java_major,
+            "java_17_plus": (java_major or 0) >= 17,
+        })
+    except Exception as exc:
+        status["errors"].append(str(exc))
+
+    eclipse_dir = _eclipse_dir(Path(mat_home))
+    if eclipse_dir is not None:
+        status["mat_installed"] = True
+        status["mat_eclipse_dir"] = str(eclipse_dir)
+        try:
+            status["equinox_launcher_found"] = _equinox_jar(eclipse_dir).exists()
+        except FileNotFoundError as exc:
+            status["errors"].append(str(exc))
+
+    status["can_auto_install_mat"] = (
+        status["platform_supported"] and status["curl_available"]
+    )
+    mat_ready = status["equinox_launcher_found"] or status["can_auto_install_mat"]
+    status["ready_for_analysis"] = (
+        status["platform_supported"]
+        and status["java_17_plus"]
+        and mat_ready
+    )
+    if status["platform_supported"] and not status["mat_installed"] and not status["curl_available"]:
+        status["errors"].append(
+            "curl is required to download Eclipse MAT on first run. "
+            "Install curl or pass mat_home pointing at an existing MAT installation."
+        )
+    return status
+
+
 # ---------------------------------------------------------------------------
 # MAT headless run
 # ---------------------------------------------------------------------------
+
+def _stop_process(proc: subprocess.Popen, grace_s: float = 5.0) -> str:
+    """Stop a MAT process without leaving it running after a timeout."""
+    try:
+        proc.terminate()
+    except ProcessLookupError:
+        return "already exited"
+
+    try:
+        proc.wait(timeout=grace_s)
+        return "terminated"
+    except subprocess.TimeoutExpired:
+        pass
+
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        return "exited after terminate"
+
+    try:
+        proc.wait(timeout=grace_s)
+        return "killed"
+    except subprocess.TimeoutExpired:
+        return "kill timed out"
+
+
+def _last_log_lines(log_lines: List[str], limit: int = 40) -> str:
+    return "\n".join(log_lines[-limit:]) if log_lines else "(no MAT output captured)"
+
 
 def run_mat(
     hprof_path: str,
@@ -193,7 +412,7 @@ def run_mat(
 
     eclipse_dir = ensure_mat(mat_home)
     java_home = _find_java17()
-    java_bin = java_home / "bin" / "java"
+    java_bin = _java_bin(java_home)
     equinox = _equinox_jar(eclipse_dir)
 
     # Check if already analysed (index files present)
@@ -205,90 +424,116 @@ def run_mat(
         return suspects_zip
 
     workspace = Path(tempfile.mkdtemp(prefix="mat-workspace-"))
-    cmd = [
-        str(java_bin),
-        f"-Xmx{mat_heap_gb}g",
-        "-jar", str(equinox),
-        "-consolelog", "-nosplash",
-        "-application", "org.eclipse.mat.api.parse",
-        "-data", str(workspace),
-        str(hprof),
-        "org.eclipse.mat.api:suspects",
-        "org.eclipse.mat.api:top_components",
-    ]
+    try:
+        cmd = [
+            str(java_bin),
+            f"-Xmx{mat_heap_gb}g",
+            "-jar", str(equinox),
+            "-consolelog", "-nosplash",
+            "-application", "org.eclipse.mat.api.parse",
+            "-data", str(workspace),
+            str(hprof),
+            "org.eclipse.mat.api:suspects",
+            "org.eclipse.mat.api:top_components",
+        ]
 
-    print(f"[mat_runner] Starting MAT analysis (this may take 10-30 min for large dumps)…")
-    print(f"[mat_runner]   java: {java_bin}")
-    print(f"[mat_runner]   hprof: {hprof}")
-    print(f"[mat_runner]   workspace: {workspace}")
+        print(f"[mat_runner] Starting MAT analysis (this may take 10-30 min for large dumps)…")
+        print(f"[mat_runner]   java: {java_bin}")
+        print(f"[mat_runner]   hprof: {hprof}")
+        print(f"[mat_runner]   workspace: {workspace}")
 
-    start = time.time()
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(eclipse_dir),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-
-    log_lines = []
-    while True:
-        line = proc.stdout.readline()
-        if line:
-            log_lines.append(line.rstrip())
-        elif proc.poll() is not None:
-            break
-        if time.time() - start > timeout_s:
-            proc.terminate()
-            raise TimeoutError(
-                f"MAT analysis exceeded {timeout_s}s timeout. "
-                f"Consider increasing mat_heap_gb or timeout_s."
-            )
-
-    elapsed = round(time.time() - start, 1)
-    rc = proc.wait()
-    print(f"[mat_runner] MAT finished in {elapsed}s (exit={rc})")
-
-    if not suspects_zip.exists():
-        shutil.rmtree(workspace, ignore_errors=True)
-        raise RuntimeError(
-            f"MAT did not produce {suspects_zip}.\n"
-            f"Last log lines:\n" + "\n".join(log_lines[-40:])
+        start = time.time()
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(eclipse_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
 
-    shutil.rmtree(workspace, ignore_errors=True)
-    return suspects_zip
+        log_lines = []
+        while True:
+            line = proc.stdout.readline()
+            if line:
+                log_lines.append(line.rstrip())
+            elif proc.poll() is not None:
+                break
+            if time.time() - start > timeout_s:
+                stop_status = _stop_process(proc)
+                raise TimeoutError(
+                    f"MAT analysis exceeded {timeout_s}s timeout; process stop status: "
+                    f"{stop_status}. Consider increasing mat_heap_gb or timeout_s.\n"
+                    f"Last log lines:\n{_last_log_lines(log_lines)}"
+                )
+
+        elapsed = round(time.time() - start, 1)
+        rc = proc.wait()
+        print(f"[mat_runner] MAT finished in {elapsed}s (exit={rc})")
+
+        if not suspects_zip.exists():
+            raise RuntimeError(
+                f"MAT did not produce {suspects_zip}.\n"
+                f"Last log lines:\n{_last_log_lines(log_lines)}"
+            )
+
+        return suspects_zip
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
 # HTML report parser
 # ---------------------------------------------------------------------------
 
-class _TextExtract(HTMLParser):
+class _MatReportTextExtract(HTMLParser):
     def __init__(self):
         super().__init__()
         self._skip = False
+        self._problem_depth = 0
+        self.problem_suspects: List[List[str]] = []
         self.texts: List[str] = []
 
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style"):
             self._skip = True
+            return
+
+        if self._problem_depth > 0:
+            self._problem_depth += 1
+            return
+
+        attr_text = " ".join(str(value or "") for _name, value in attrs).lower()
+        attr_text = attr_text.replace("_", "-")
+        if tag in ("article", "div", "section") and "problem-suspect" in attr_text:
+            self._problem_depth = 1
+            self.problem_suspects.append([])
 
     def handle_endtag(self, tag):
         if tag in ("script", "style"):
             self._skip = False
+            return
+        if self._problem_depth > 0:
+            self._problem_depth -= 1
 
     def handle_data(self, data):
         if not self._skip:
             s = data.strip()
             if s:
                 self.texts.append(s)
+                if self._problem_depth > 0 and self.problem_suspects:
+                    self.problem_suspects[-1].append(s)
 
 
 def _extract_text(html: str) -> List[str]:
-    parser = _TextExtract()
+    parser = _MatReportTextExtract()
     parser.feed(html)
     return parser.texts
+
+
+def _extract_mat_text(html: str) -> Tuple[List[str], List[List[str]]]:
+    parser = _MatReportTextExtract()
+    parser.feed(html)
+    return parser.texts, [texts for texts in parser.problem_suspects if texts]
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +548,6 @@ def _parse_leak_suspects(suspects_zip: Path) -> Dict[str, Any]:
       suspects     – list of problem-suspect dicts (description, accumulation_point,
                      dominator_path, object_graph_classes, stack_frames)
       histogram    – top classes by retained heap
-      raw_text     – full extracted text per HTML page (for LLM or further analysis)
     """
     with tempfile.TemporaryDirectory() as td:
         extract_dir = Path(td)
@@ -318,7 +562,12 @@ def _parse_leak_suspects(suspects_zip: Path) -> Dict[str, Any]:
         page_texts: Dict[str, List[str]] = {}
         for p in sorted(pages_dir.glob("*.html")):
             html = p.read_text(errors="ignore")
-            page_texts[p.name] = _extract_text(html)
+            texts, problem_suspects = _extract_mat_text(html)
+            if problem_suspects:
+                for i, suspect_texts in enumerate(problem_suspects, start=1):
+                    page_texts[f"{p.name}#problem-suspect-{i}"] = suspect_texts
+            else:
+                page_texts[p.name] = texts
 
         # Also parse index.html / toc.html
         for extra in ["index.html", "toc.html"]:
@@ -348,6 +597,7 @@ _RE_STACK_FRAME = re.compile(
 _RE_RETAINED = re.compile(
     r"([\d,]+)\s*\(([\d.]+)%\)\s*bytes?"
 )
+_RE_CLASS_PREFIX = re.compile(r"^(?:com|java|javax|jdk|kotlin|net|org|scala|sun)\.")
 
 
 def _parse_bytes(s: str) -> int:
@@ -361,11 +611,10 @@ def _parse_bytes(s: str) -> int:
 def _structure_findings(page_texts: Dict[str, List[str]]) -> Dict[str, Any]:
     suspects: List[Dict[str, Any]] = []
     histogram: List[Dict[str, Any]] = []
-    all_raw: Dict[str, str] = {}
+    suspect_parse_failures: List[str] = []
 
     for page_name, texts in page_texts.items():
         joined = "\n".join(texts)
-        all_raw[page_name] = joined
 
         # ---- Histogram page ----
         if "Class_Histogram" in page_name or "Class Histogram" in joined[:200]:
@@ -392,8 +641,12 @@ def _structure_findings(page_texts: Dict[str, List[str]]) -> Dict[str, Any]:
             if hist_entries:
                 histogram = hist_entries[:30]
 
+        has_problem_suspect_text = "Problem Suspect" in joined
+        has_numbered_suspect = re.search(r"Problem Suspect \d+", joined) is not None
+        page_suspect_count_before = len(suspects)
+
         # ---- Suspect pages ----
-        if re.search(r"Problem Suspect \d+", joined):
+        if has_numbered_suspect:
             current: Optional[Dict[str, Any]] = None
             stack_frames: List[str] = []
             dominator_path: List[str] = []
@@ -447,19 +700,23 @@ def _structure_findings(page_texts: Dict[str, List[str]]) -> Dict[str, Any]:
 
                 if "Shortest Paths" in line or "Accumulated Objects in" in line:
                     in_dom = True
+                    in_desc = False
                     in_stack = False
                     in_graph = False
 
                 if "All Accumulated Objects by Class" in line:
                     in_graph = True
+                    in_desc = False
                     in_dom = False
                     in_stack = False
 
                 if "Thread Stack" in line or "stacktrace" in line.lower():
                     in_stack = True
+                    in_desc = False
                     in_dom = False
+                    in_graph = False
 
-                if in_desc and line.startswith("com.") or line.startswith("java.") or line.startswith("scala."):
+                if in_desc and _RE_CLASS_PREFIX.match(line):
                     if "readResultSet" in line or "retains" in line or "occupies" in line:
                         accumulation_point = line
                         current["accumulation_point"] = accumulation_point
@@ -491,6 +748,9 @@ def _structure_findings(page_texts: Dict[str, List[str]]) -> Dict[str, Any]:
                     current["description"] = " ".join(description_lines[:10])
                 suspects.append(current)
 
+        if has_problem_suspect_text and len(suspects) == page_suspect_count_before:
+            suspect_parse_failures.append(page_name)
+
     # Deduplicate suspects (same number may appear in multiple pages)
     seen_nums: set = set()
     deduped: List[Dict] = []
@@ -499,10 +759,15 @@ def _structure_findings(page_texts: Dict[str, List[str]]) -> Dict[str, Any]:
             seen_nums.add(s["suspect_number"])
             deduped.append(s)
 
+    if suspect_parse_failures:
+        raise ValueError(
+            "MAT report mentioned Problem Suspect but no structured suspect could be parsed from: "
+            + ", ".join(suspect_parse_failures)
+        )
+
     return {
         "suspects": deduped,
         "histogram": histogram,
-        "raw_text_by_page": all_raw,
     }
 
 
@@ -530,4 +795,3 @@ def analyse_hprof(
     findings = _parse_leak_suspects(suspects_zip)
     findings["suspects_zip"] = str(suspects_zip)
     return findings
-

@@ -2,9 +2,9 @@
 name: jvm-memory-leak-debugger
 version: 1.0.0
 description: >
-  Diagnoses JVM out-of-memory failures from a .hprof heap dump and G1 GC log.
-  Identifies the dominant object graph, classifies the GC failure phase, and
-  produces ranked fix recommendations with code pointers.
+  Use when diagnosing JVM OutOfMemoryError, heap leaks, G1 Full GC storms, or
+  memory-retention incidents from a .hprof heap dump and JVM unified GC log.
+  Runs as a portable agent skill, MCP toolset, HTTP bridge, or standalone CLI.
 author: data-diff
 license: MIT
 tags:
@@ -53,8 +53,8 @@ Ask the user for:
 1. The `.hprof` heap dump path (e.g. `target/jvm-logs/java_pid16615.hprof`)
 2. The JVM GC log path (e.g. `target/jvm-logs/gc-16615.log`)
 
-If either file is missing, direct the user to enable JVM flags (see
-`references/jvm_flags.md`).
+If either file is missing, ask for it and direct the user to
+`references/jvm_flags.md`.
 
 ### Step 2 — Run GC log analysis first
 
@@ -82,6 +82,11 @@ the GC storm. Possible phases:
 
 Call `extract_heap_suspects`. MAT may take 10–30 minutes on large dumps.
 
+For local setup checks, run `python3 tools/debug_memory_leak.py
+--check-runtime` before asking for a full heap analysis. Use `mat_home` when a
+host provides a managed Eclipse MAT installation outside the default temp
+directory.
+
 If MAT was already run and a `*_Leak_Suspects.zip` exists beside the `.hprof`,
 pass `skip_mat=true` to `generate_report` instead.
 
@@ -92,7 +97,13 @@ Focus on:
 
 ### Step 5 — Generate full report
 
-Call `generate_report` for the end-to-end pipeline. This writes:
+Call `generate_report` for the end-to-end pipeline, or run the standalone CLI:
+
+```bash
+python3 tools/debug_memory_leak.py --hprof /path/to/dump.hprof --gc-log /path/to/gc.log
+```
+
+This writes:
 - `report.json` — machine-readable artifact (source of truth)
 - `report.md` — human-readable markdown with timeline, suspects, recommendations
 
@@ -139,7 +150,7 @@ Full report: <md_report_path>
 - If both artifact files are missing, stop and ask the user to provide them.
   Do not fabricate memory statistics.
 - If MAT fails to run, surface the error, complete the GC log analysis, and
-  recommend the user run MAT manually using `scripts/run_mat.sh`.
+  point the user to `references/mat_installation.md` for Java/MAT setup.
 - Keep summaries concise. Do not repeat every histogram row — top 5 max.
 - Severity labels are derived deterministically from GC metrics — do not
   override them on intuition alone.
@@ -150,10 +161,8 @@ Full report: <md_report_path>
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/run_mat.sh` | Headless Eclipse MAT runner with auto-download |
 | `scripts/validate_artifacts.sh` | Checks `.hprof` and GC log are present and non-empty |
-| `scripts/parse_gc_log.py` | Standalone GC log parser — prints JSON to stdout |
-| `scripts/generate_report.py` | End-to-end CLI wrapper around `run_full_analysis` |
+| `tools/debug_memory_leak.py` | Standalone CLI and `generate_report` callable |
 
 ---
 
@@ -165,6 +174,8 @@ Full report: <md_report_path>
 | `references/g1gc_phases.md` | G1 GC phase glossary |
 | `references/fix_patterns.md` | Known leak patterns with symptoms and remediation |
 | `references/mat_installation.md` | Eclipse MAT installation and headless operation guide |
+| `references/harness_configuration.md` | Codex, Copilot, Claude MCP, HTTP, and direct dispatch hosting guide |
+| `references/preflight_checklist.md` | Host/operator checks before wiring the skill into a harness |
 
 ---
 
@@ -172,6 +183,5 @@ Full report: <md_report_path>
 
 | Asset | Description |
 |-------|-------------|
-| `assets/report_template.md` | Markdown report template used by `reporter.py` |
+| `assets/report_template.md` | Markdown report shape reference for future renderer templating |
 | `assets/skill_card.md` | One-page skill summary card for team wikis |
-

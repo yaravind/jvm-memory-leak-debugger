@@ -1,0 +1,18 @@
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Packaging/build outputs
+build/
+dist/
+*.egg-info/
+
+# Local virtual environments
+.venv/
+venv/
+env/
+
+# Local analysis outputs
+memleak-report/
+.coverage

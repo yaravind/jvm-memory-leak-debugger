@@ -1,0 +1,17 @@
+{
+  "patterns": [
+    {
+      "id": "project_jdbc_reader_materialization",
+      "match_class": "JdbcDatasetReader|readResultSet",
+      "match_stack": "readResultSet|JdbcDatasetReader",
+      "title": "Project JDBC reader materialises a large result set",
+      "description": "The project-specific JDBC reader appears in the retaining stack and should be checked for unbounded result-set materialisation.",
+      "fixes": [
+        "Add a row-count guard before appending rows to the in-memory result.",
+        "Stream rows through the comparison pipeline instead of returning one fully materialised collection.",
+        "Reject or warn on broad production queries that do not include an explicit bound."
+      ],
+      "code_pointer": "src/main/scala/example/JdbcDatasetReader.scala"
+    }
+  ]
+}

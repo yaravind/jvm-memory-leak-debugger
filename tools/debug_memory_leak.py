@@ -10,7 +10,6 @@ This module is the `generate_report` tool in skill.json.
 """
 import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,122 +17,96 @@ from pathlib import Path
 # Ensure tools/ is importable when called directly
 sys.path.insert(0, str(Path(__file__).parent))
 
-import gc_parser
-import correlator
-import reporter
-
-
-# ---------------------------------------------------------------------------
-# Public API (callable by agent runtimes)
-# ---------------------------------------------------------------------------
-
-def run_full_analysis(
-    hprof_path: str,
-    gc_log_path: str,
-    output_dir: str = None,
-    skip_mat: bool = False,
-    mat_heap_gb: int = 12,
-    timeout_s: int = 7200,
-) -> dict:
-    """
-    Full pipeline: parse GC log → correlate → MAT analysis → build reports.
-
-    Returns:
-        {
-            "json_report_path": str,
-            "md_report_path": str,
-            "severity": str,            # CRITICAL / HIGH / MEDIUM / LOW
-            "top_recommendations": list,
-            "gc_summary": dict,
-            "correlation": dict,
-            "suspects": list,
-        }
-    """
-    hprof = str(Path(hprof_path).resolve())
-    gc_log = str(Path(gc_log_path).resolve())
-
-    out_dir = Path(output_dir) if output_dir else Path(gc_log).parent / "memleak-report"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Step 1: GC log
-    gc_sum = gc_parser.parse_gc_log(gc_log)
-    gc_data = gc_parser.gc_summary_to_dict(gc_sum)
-
-    # Step 2: Correlation
-    try:
-        corr = correlator.correlate(gc_sum, gc_log, hprof)
-    except Exception as e:
-        corr = {"error": str(e), "dump_phase": "unknown"}
-
-    # Step 3: MAT
-    mat_findings: dict = {"suspects": [], "histogram": [], "suspects_zip": None}
-    if not skip_mat:
-        try:
-            from mat_runner import analyse_hprof
-            mat_findings = analyse_hprof(
-                hprof_path=hprof,
-                mat_heap_gb=mat_heap_gb,
-                timeout_s=timeout_s,
-            )
-        except Exception as e:
-            mat_findings = {"suspects": [], "histogram": [], "error": str(e)}
-    else:
-        # Try to reuse existing suspects zip
-        from mat_runner import _parse_leak_suspects
-        zip_path = Path(hprof).parent / (Path(hprof).stem + "_Leak_Suspects.zip")
-        if zip_path.exists():
-            try:
-                mat_findings = _parse_leak_suspects(zip_path)
-                mat_findings["suspects_zip"] = str(zip_path)
-            except Exception:
-                pass
-
-    # Step 4: Build report
-    full_report = reporter.build_report(
-        gc_data=gc_data,
-        mat_findings=mat_findings,
-        correlation=corr,
-        hprof_path=hprof,
-        gc_log_path=gc_log,
-    )
-
-    json_path = reporter.write_json_report(full_report, str(out_dir / "report.json"))
-    md_path = reporter.write_markdown_report(full_report, str(out_dir / "report.md"))
-
-    # Severity for caller
-    from reporter import _severity_badge
-    severity = _severity_badge(gc_data, corr).split(" ", 1)[-1].strip()
-
-    return {
-        "json_report_path": json_path,
-        "md_report_path": md_path,
-        "severity": severity,
-        "top_recommendations": [
-            {"title": r["title"], "code_pointer": r.get("code_pointer"), "fixes": r.get("fixes", [])[:2]}
-            for r in full_report.get("recommendations", [])[:3]
-        ],
-        "gc_summary": gc_data,
-        "correlation": corr,
-        "suspects": mat_findings.get("suspects", []),
-    }
+from dispatch import dispatch_tool
+from mat_runner import DEFAULT_MAT_HOME, runtime_diagnostics
+from pipeline import run_full_analysis
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
+def _print_runtime_diagnostics(status: dict) -> None:
+    print("[jvm-memory-leak-debugger] runtime check")
+    print(f"  Platform:      {status['platform_key']}")
+    print(f"  Supported:     {status['platform_supported']}")
+    print(f"  Java 17+:      {status['java_17_plus']}")
+    if status.get("java_home"):
+        print(f"  Java home:     {status['java_home']}")
+    print(f"  MAT version:   {status['mat_version']}")
+    print(f"  MAT home:      {status['mat_home']}")
+    print(f"  MAT installed: {status['mat_installed']}")
+    if status.get("mat_eclipse_dir"):
+        print(f"  Eclipse dir:   {status['mat_eclipse_dir']}")
+    print(f"  curl:          {status.get('curl_available', False)}")
+    print(f"  Auto-install:  {status['can_auto_install_mat']}")
+    print(f"  Ready:         {status['ready_for_analysis']}")
+    if status.get("errors"):
+        print("\n  Issues:")
+        for error in status["errors"]:
+            print(f"    - {error}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="JVM Memory Leak Debugger — GC log + hprof → structured report"
     )
-    ap.add_argument("--hprof", required=True)
-    ap.add_argument("--gc-log", required=True, dest="gc_log")
+    ap.add_argument("--hprof")
+    ap.add_argument("--gc-log", dest="gc_log")
     ap.add_argument("--output-dir", default=None, dest="output_dir")
+    ap.add_argument(
+        "--mat-home",
+        default=None,
+        dest="mat_home",
+        help=f"Optional Eclipse MAT install root (default: {DEFAULT_MAT_HOME}).",
+    )
     ap.add_argument("--mat-heap-gb", type=int, default=12, dest="mat_heap_gb")
+    ap.add_argument(
+        "--timeout-s",
+        type=int,
+        default=7200,
+        dest="timeout_s",
+        help="Timeout in seconds for MAT analysis (default: 7200).",
+    )
+    ap.add_argument(
+        "--patterns-file",
+        default=None,
+        dest="patterns_file",
+        help="Optional JSON file with custom recommendation patterns.",
+    )
     ap.add_argument("--skip-mat", action="store_true", dest="skip_mat")
+    ap.add_argument(
+        "--dump-time",
+        default=None,
+        dest="dump_time",
+        help="Optional heap dump timestamp override as ISO-8601, epoch seconds, or epoch milliseconds.",
+    )
+    ap.add_argument(
+        "--check-runtime",
+        action="store_true",
+        dest="check_runtime",
+        help="Check local platform, Java 17+, and MAT installation readiness without reading artifacts.",
+    )
     ap.add_argument("--open", action="store_true")
     ap.add_argument("--json", action="store_true", help="Print result JSON to stdout")
     args = ap.parse_args()
+
+    if args.check_runtime:
+        status = runtime_diagnostics(
+            Path(args.mat_home) if args.mat_home else DEFAULT_MAT_HOME
+        )
+        if args.json:
+            print(json.dumps(status, indent=2, default=str))
+        else:
+            _print_runtime_diagnostics(status)
+        return 0 if status["ready_for_analysis"] else 1
+
+    if not args.hprof:
+        print("ERROR: --hprof is required unless --check-runtime is used.", file=sys.stderr)
+        return 2
+    if not args.gc_log:
+        print("ERROR: --gc-log is required unless --check-runtime is used.", file=sys.stderr)
+        return 2
 
     if not Path(args.hprof).exists():
         print(f"ERROR: hprof not found: {args.hprof}", file=sys.stderr)
@@ -145,13 +118,17 @@ def main() -> int:
     print(f"[jvm-memory-leak-debugger] hprof:  {args.hprof}")
     print(f"[jvm-memory-leak-debugger] gc-log: {args.gc_log}")
 
-    result = run_full_analysis(
-        hprof_path=args.hprof,
-        gc_log_path=args.gc_log,
-        output_dir=args.output_dir,
-        skip_mat=args.skip_mat,
-        mat_heap_gb=args.mat_heap_gb,
-    )
+    result = dispatch_tool("generate_report", {
+        "hprof_path": args.hprof,
+        "gc_log_path": args.gc_log,
+        "output_dir": args.output_dir,
+        "skip_mat": args.skip_mat,
+        "mat_home": args.mat_home,
+        "mat_heap_gb": args.mat_heap_gb,
+        "timeout_s": args.timeout_s,
+        "patterns_file": args.patterns_file,
+        "dump_time": args.dump_time,
+    })
 
     print(f"\n  Severity:  {result['severity']}")
     print(f"  JSON:      {result['json_report_path']}")
@@ -181,4 +158,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

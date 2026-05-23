@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RecommendationPatterns",
+  "description": "Optional custom recommendation patterns loaded by --patterns-file or PATTERNS_FILE.",
+  "oneOf": [
+    { "$ref": "#/definitions/pattern_array" },
+    {
+      "type": "object",
+      "required": ["patterns"],
+      "properties": {
+        "patterns": { "$ref": "#/definitions/pattern_array" }
+      }
+    }
+  ],
+  "definitions": {
+    "pattern_array": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/pattern" }
+    },
+    "pattern": {
+      "type": "object",
+      "required": ["id", "title", "description", "fixes"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "fixes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "code_pointer": { "type": ["string", "null"] },
+        "match_class": {
+          "type": "string",
+          "description": "Case-insensitive regex matched against MAT suspect, dominator, and histogram text."
+        },
+        "match_stack": {
+          "type": "string",
+          "description": "Case-insensitive regex matched against MAT stack frames."
+        },
+        "match_text": {
+          "type": "string",
+          "description": "Case-insensitive regex matched against combined MAT suspect text."
+        },
+        "gc": {
+          "type": "object",
+          "properties": {
+            "min_to_space_exhausted": { "type": "integer", "minimum": 0 },
+            "min_full_gc_count": { "type": "integer", "minimum": 0 },
+            "min_concurrent_abort_count": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

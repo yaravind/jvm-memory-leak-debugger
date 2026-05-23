@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "jvm-memory-leak-debugger": {
+      "command": "python3",
+      "args": [
+        "/ABSOLUTE/PATH/TO/jvm-memory-leak-debugger/mcp_server.py"
+      ],
+      "env": {
+        "JAVA17_HOME": "/ABSOLUTE/PATH/TO/jdk-17"
+      }
+    }
+  }
+}

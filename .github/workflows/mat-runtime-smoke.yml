@@ -1,0 +1,39 @@
+name: MAT Runtime Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mat-runtime-smoke:
+    name: MAT Runtime Smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    env:
+      PYTHONPATH: tools
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install core package without adapter dependencies
+        run: python -m pip install -e . --no-deps
+
+      - name: Runtime diagnostic before MAT download
+        run: |
+          python -c "import mat_runner; s=mat_runner.runtime_diagnostics(); assert s['platform_supported'], s; assert s['java_17_plus'], s; assert s['curl_available'], s; assert s['can_auto_install_mat'], s; print(s['platform_key'], s['mat_archive'])"
+
+      - name: Download, verify, and unpack pinned MAT
+        run: |
+          python -c "import mat_runner; eclipse=mat_runner.ensure_mat(); s=mat_runner.runtime_diagnostics(); assert s['mat_installed'], s; assert s['equinox_launcher_found'], s; assert s['ready_for_analysis'], s; print(eclipse)"
