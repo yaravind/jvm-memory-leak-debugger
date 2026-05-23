@@ -320,6 +320,7 @@ def test_prd_marks_locally_completed_maturity_slices_without_overclaiming_ci():
 
 def test_contributor_cleanup_regression_guards():
     makefile = (ROOT / "Makefile").read_text()
+    debug_cli = (ROOT / "tools" / "debug_memory_leak.py").read_text()
     gc_parser = (ROOT / "tools" / "gc_parser.py").read_text()
     reporter = (ROOT / "tools" / "reporter.py").read_text()
     pytest_ini = (ROOT / "pytest.ini").read_text()
@@ -342,6 +343,7 @@ def test_contributor_cleanup_regression_guards():
     assert not (ROOT / "conftest.py").exists()
     assert not (ROOT / "tests" / "conftest.py").exists()
     assert "pythonpath = tools" in pytest_ini
+    assert "→" not in debug_cli
     assert "_RE_PAUSE_FULL_SUMMARY" not in gc_parser
     assert reporter.count('encoding="utf-8"') >= 2
     for deleted_entry_point in (

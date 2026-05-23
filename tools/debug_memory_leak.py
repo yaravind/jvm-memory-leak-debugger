@@ -51,7 +51,7 @@ def _print_runtime_diagnostics(status: dict) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="JVM Memory Leak Debugger — GC log + hprof → structured report"
+        description="JVM Memory Leak Debugger - GC log + hprof -> structured report"
     )
     ap.add_argument("--hprof")
     ap.add_argument("--gc-log", dest="gc_log")

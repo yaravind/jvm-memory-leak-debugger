@@ -546,6 +546,28 @@ Codex, Claude, GitHub Copilot, MCP hosts, HTTP adapters, and shell workflows.
     E2E tests deselected.
   - `make validate-manifests` passed.
   - `make test-e2e-gc` passed: 15 selected tests and 3 full E2E tests deselected.
+- Pushed CI-fix commit `18855c9`, which triggered GitHub Actions run
+  `26345345825`
+  (`https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345345825`).
+  That run fixed the previous pyflakes and Windows report-write failures, but
+  still failed Windows cross-platform smoke in `Installed console command help`.
+  The failed logs showed `UnicodeEncodeError: 'charmap' codec can't encode
+  character '\u2192'` from `argparse` while printing
+  `jvm-memory-leak-debugger --help`.
+- Local follow-up replaced the Unicode arrow in the CLI description with ASCII
+  `->` and added a manifest guard to prevent that Windows console-help failure
+  from returning.
+- Verification after the CLI help encoding follow-up:
+  - `PYTHONPATH=tools python3 -m pytest tests/test_manifest.py -v` passed, 19
+    tests.
+  - `python3 tools/debug_memory_leak.py --help` produced output that encodes as
+    `cp1252`, matching the Windows console failure mode.
+  - `/private/tmp/jvm-memleak-pyflakes/bin/python -m pyflakes ...` passed against
+    the same 13 files checked by `make lint`.
+  - `make test` passed: 97 selected tests, 2 optional adapter skips, and 3 full
+    E2E tests deselected.
+  - `make validate-manifests` passed.
+  - `make lint` passed with the `py_compile` fallback across 13 Python files.
 
 ## Current Implementation Pass
 
