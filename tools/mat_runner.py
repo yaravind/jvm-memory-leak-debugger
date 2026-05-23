@@ -437,7 +437,7 @@ def run_mat(
             "org.eclipse.mat.api:top_components",
         ]
 
-        print(f"[mat_runner] Starting MAT analysis (this may take 10-30 min for large dumps)…")
+        print("[mat_runner] Starting MAT analysis (this may take 10-30 min for large dumps)…")
         print(f"[mat_runner]   java: {java_bin}")
         print(f"[mat_runner]   hprof: {hprof}")
         print(f"[mat_runner]   workspace: {workspace}")

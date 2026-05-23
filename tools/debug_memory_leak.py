@@ -21,6 +21,8 @@ from dispatch import dispatch_tool
 from mat_runner import DEFAULT_MAT_HOME, runtime_diagnostics
 from pipeline import run_full_analysis
 
+__all__ = ["main", "run_full_analysis"]
+
 
 # ---------------------------------------------------------------------------
 # CLI

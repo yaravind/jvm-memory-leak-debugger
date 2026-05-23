@@ -321,6 +321,7 @@ def test_prd_marks_locally_completed_maturity_slices_without_overclaiming_ci():
 def test_contributor_cleanup_regression_guards():
     makefile = (ROOT / "Makefile").read_text()
     gc_parser = (ROOT / "tools" / "gc_parser.py").read_text()
+    reporter = (ROOT / "tools" / "reporter.py").read_text()
     pytest_ini = (ROOT / "pytest.ini").read_text()
     public_docs = "\n".join(
         path.read_text()
@@ -342,6 +343,7 @@ def test_contributor_cleanup_regression_guards():
     assert not (ROOT / "tests" / "conftest.py").exists()
     assert "pythonpath = tools" in pytest_ini
     assert "_RE_PAUSE_FULL_SUMMARY" not in gc_parser
+    assert reporter.count('encoding="utf-8"') >= 2
     for deleted_entry_point in (
         "scripts/run_mat.sh",
         "scripts/parse_gc_log.py",

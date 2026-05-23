@@ -519,6 +519,33 @@ Codex, Claude, GitHub Copilot, MCP hosts, HTTP adapters, and shell workflows.
   approval.
 - Added #2 post-diagnostic release-check evidence follow-up note:
   https://github.com/yaravind/jvm-memory-leak-debugger/issues/2#issuecomment-4526625449
+- User explicitly authorized staging, committing, and pushing the maturity work.
+  Staged all local changes and committed `01346b9` with issue references for
+  #1, #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, and #14, then pushed
+  `codex/maturity-roadmap` to `origin`.
+- After the push, `gh auth status` reported a healthy keyring token for
+  `yaravind` with `repo` and `workflow` scopes.
+- GitHub Actions run `26345269801`
+  (`https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345269801`)
+  started for `Test JVM Memory Leak Debugger Skill` on `codex/maturity-roadmap`
+  and failed in `lint` plus Windows cross-platform smoke. The failed logs showed
+  pyflakes issues in adapter wrappers/import cleanup and a Windows
+  `UnicodeEncodeError` when writing `report.md` with the platform default
+  encoding.
+- Local CI-fix pass addressed those failures by replacing wildcard root adapter
+  exports with explicit compatibility exports, removing pyflakes-unused locals
+  and imports, writing JSON/Markdown reports with UTF-8, and adding a manifest
+  guard for the report writers' UTF-8 output encoding.
+- Verification after the CI-fix pass:
+  - `PYTHONPATH=tools python3 -m pytest tests/test_manifest.py tests/test_dispatch.py -v`
+    passed, 28 tests.
+  - `make lint` passed with the `py_compile` fallback across 13 Python files.
+  - `/private/tmp/jvm-memleak-pyflakes/bin/python -m pyflakes ...` passed against
+    the same files checked by `make lint`.
+  - `make test` passed: 97 selected tests, 2 optional adapter skips, and 3 full
+    E2E tests deselected.
+  - `make validate-manifests` passed.
+  - `make test-e2e-gc` passed: 15 selected tests and 3 full E2E tests deselected.
 
 ## Current Implementation Pass
 

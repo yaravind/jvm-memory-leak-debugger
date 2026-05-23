@@ -15,8 +15,16 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "tools"))
 
-from server_adapter import *  # noqa: F401,F403
-from server_adapter import main
+import server_adapter as _adapter
+
+TOOLS = _adapter.TOOLS
+app = _adapter.app
+health = _adapter.health
+main = _adapter.main
+skill_manifest = _adapter.skill_manifest
+tool_catalog = _adapter.tool_catalog
+
+__all__ = ["TOOLS", "app", "health", "main", "skill_manifest", "tool_catalog"]
 
 
 if __name__ == "__main__":

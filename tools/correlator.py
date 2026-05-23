@@ -13,13 +13,10 @@ Returns:
   - inferred_trigger: human-readable description of what likely caused the dump
 """
 
-import os
 import re
-import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from gc_parser import GcSummary, GcEvent
 
@@ -167,12 +164,6 @@ def correlate(
     # -- Find surrounding GC events --
     surrounding = [
         ev for ev in gc_summary.events
-        if abs(ev.elapsed_s - dump_elapsed_s) <= window_s
-    ]
-
-    # Full GCs in a tighter band
-    full_near = [
-        ev for ev in gc_summary.full_gc_events
         if abs(ev.elapsed_s - dump_elapsed_s) <= window_s
     ]
 

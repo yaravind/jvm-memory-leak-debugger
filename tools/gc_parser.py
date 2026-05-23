@@ -145,7 +145,6 @@ def parse_gc_log(path: str) -> GcSummary:
                 continue
 
             elapsed = float(m.group("elapsed"))
-            tag = m.group("tag").strip()
             msg = m.group("msg").strip()
 
             if first_elapsed is None:
