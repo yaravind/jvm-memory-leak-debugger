@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GcAnalysisResult",
+  "description": "Output schema for the analyze_gc_log tool",
+  "type": "object",
+  "required": ["config", "runtime_s", "young_gc", "full_gc", "full_gc_count",
+               "to_space_exhausted_count", "concurrent_abort_count"],
+  "properties": {
+    "config": {
+      "type": "object",
+      "required": ["collector", "max_heap_mb"],
+      "properties": {
+        "collector":       { "type": "string" },
+        "max_heap_mb":     { "type": "integer" },
+        "region_size_mb":  { "type": "integer" },
+        "compressed_oops": { "type": "boolean" }
+      }
+    },
+    "runtime_s":                  { "type": "number" },
+    "full_gc_count":              { "type": "integer" },
+    "to_space_exhausted_count":   { "type": "integer" },
+    "concurrent_abort_count":     { "type": "integer" },
+    "live_set_drift_mb":          { "type": ["number", "null"] },
+    "young_gc": {
+      "type": "object",
+      "required": ["count", "min", "max", "avg", "p95", "total"],
+      "properties": {
+        "count": { "type": "integer" },
+        "min":   { "type": "number" },
+        "max":   { "type": "number" },
+        "avg":   { "type": "number" },
+        "p95":   { "type": "number" },
+        "total": { "type": "number" }
+      }
+    },
+    "full_gc": {
+      "type": "object",
+      "required": ["count", "min", "max", "avg", "p95", "total"],
+      "properties": {
+        "count": { "type": "integer" },
+        "min":   { "type": "number" },
+        "max":   { "type": "number" },
+        "avg":   { "type": "number" },
+        "p95":   { "type": "number" },
+        "total": { "type": "number" }
+      }
+    },
+    "full_gc_timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gc_id", "elapsed_s", "before_mb", "after_mb", "heap_mb", "pause_ms"],
+        "properties": {
+          "gc_id":      { "type": "integer" },
+          "elapsed_s":  { "type": "number" },
+          "before_mb":  { "type": "number" },
+          "after_mb":   { "type": "number" },
+          "heap_mb":    { "type": "number" },
+          "pause_ms":   { "type": "number" }
+        }
+      }
+    }
+  }
+}
+

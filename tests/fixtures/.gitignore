@@ -1,0 +1,6 @@
+# .gitignore for tests/fixtures
+# The hprof is ~13 GB — too large for git.
+# Obtain from: target/jvm-logs/java_pid16615.hprof
+# or set HPROF_PATH env var to its location.
+*.hprof
+

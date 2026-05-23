@@ -1,0 +1,133 @@
+name: Test JVM Memory Leak Debugger Skill
+
+on:
+  push:
+    paths:
+      - 'skills/jvm-memory-leak-debugger/**'
+  pull_request:
+    paths:
+      - 'skills/jvm-memory-leak-debugger/**'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Unit tests — synthetic fixtures, fast, no external deps
+  # ---------------------------------------------------------------------------
+  unit:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run gc_parser unit tests
+        working-directory: skills/jvm-memory-leak-debugger
+        run: PYTHONPATH=tools python -m pytest tests/test_gc_parser.py -v
+
+      - name: Run reporter unit tests
+        working-directory: skills/jvm-memory-leak-debugger
+        run: PYTHONPATH=tools python -m pytest tests/test_reporter.py -v
+
+      - name: Validate skill.json
+        working-directory: skills/jvm-memory-leak-debugger
+        run: python -c "import json; d=json.load(open('skill.json')); assert d['schema_version']=='1.0'; assert len(d['tools'])==4; print('skill.json OK')"
+
+      - name: Validate JSON schemas
+        working-directory: skills/jvm-memory-leak-debugger
+        run: |
+          python -c "import json; json.load(open('schemas/gc_analysis_result.json')); print('gc_analysis_result.json OK')"
+          python -c "import json; json.load(open('schemas/memory_leak_report.json')); print('memory_leak_report.json OK')"
+
+      - name: Check all tool modules importable
+        working-directory: skills/jvm-memory-leak-debugger/tools
+        run: |
+          python -c "import gc_parser; print('gc_parser OK')"
+          python -c "import correlator; print('correlator OK')"
+          python -c "import reporter; print('reporter OK')"
+          python -c "import debug_memory_leak; print('debug_memory_leak OK')"
+
+  # ---------------------------------------------------------------------------
+  # E2E GC-log tests — uses the REAL gc-16615.log committed in tests/fixtures/
+  # No hprof needed. These tests verify ground-truth values from the real incident.
+  # ---------------------------------------------------------------------------
+  e2e-gc:
+    name: E2E Real GC Log (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify real GC log fixture is present
+        run: |
+          test -f skills/jvm-memory-leak-debugger/tests/fixtures/gc-16615.log \
+            && echo "gc-16615.log present ($(wc -l < skills/jvm-memory-leak-debugger/tests/fixtures/gc-16615.log) lines)" \
+            || (echo "ERROR: gc-16615.log missing from tests/fixtures/" && exit 1)
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run E2E GC-log tests (real incident fixture)
+        working-directory: skills/jvm-memory-leak-debugger
+        run: PYTHONPATH=tools python -m pytest tests/test_e2e_real_gc.py -v -m e2e_gc
+
+  # ---------------------------------------------------------------------------
+  # E2E full pipeline — requires the 13 GB hprof (skipped unless HPROF_PATH set)
+  # Configure as a self-hosted runner job or run manually with act + HPROF_PATH.
+  # ---------------------------------------------------------------------------
+  e2e-full:
+    name: E2E Full Pipeline (skip-mat, real hprof)
+    runs-on: ubuntu-latest
+    # Only run when HPROF_PATH secret is configured in the repo/org
+    if: ${{ vars.HPROF_AVAILABLE == 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run full E2E pipeline (skip-mat)
+        working-directory: skills/jvm-memory-leak-debugger
+        env:
+          HPROF_PATH: ${{ secrets.HPROF_PATH }}
+        run: PYTHONPATH=tools python -m pytest tests/test_e2e_real_gc.py -v -m e2e_full
+
+  # ---------------------------------------------------------------------------
+  # Lint
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pyflakes
+      - name: Pyflakes check
+        working-directory: skills/jvm-memory-leak-debugger/tools
+        run: python -m pyflakes gc_parser.py mat_runner.py correlator.py reporter.py debug_memory_leak.py
+

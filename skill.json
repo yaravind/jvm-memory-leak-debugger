@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0",
+  "id": "jvm-memory-leak-debugger",
+  "name": "JVM Memory Leak Debugger",
+  "description": "Diagnoses JVM memory leaks from a heap dump (.hprof) and G1 GC log. Identifies the dominant object graph, root cause, GC pressure timeline, and produces ranked fix recommendations. Works with GitHub Copilot, Claude, and OpenAI Codex agent runtimes.",
+  "version": "1.0.0",
+  "author": "data-diff",
+  "license": "MIT",
+  "tags": ["java", "jvm", "memory", "debugging", "performance", "gc", "heap", "scala", "devtools"],
+  "runtime": "python3",
+  "entry_point": "tools/debug_memory_leak.py",
+  "tools": [
+    {
+      "name": "analyze_gc_log",
+      "description": "Parse a JVM G1 unified GC log file and return structured statistics: pause counts, Full GC timeline, To-space exhaustion events, live-set drift, and concurrent cycle aborts.",
+      "module": "tools/gc_parser.py",
+      "function": "parse_and_summarize",
+      "parameters": {
+        "type": "object",
+        "required": ["gc_log_path"],
+        "properties": {
+          "gc_log_path": {
+            "type": "string",
+            "description": "Absolute or relative path to the JVM GC log file (e.g. target/jvm-logs/gc-16615.log)"
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "description": "GC summary dict with config, young_gc stats, full_gc stats, full_gc_timeline, live_set_drift_mb, to_space_exhausted_count, concurrent_abort_count"
+      }
+    },
+    {
+      "name": "extract_heap_suspects",
+      "description": "Run Eclipse Memory Analyzer (MAT) headlessly on an .hprof heap dump. Auto-downloads MAT if not installed. Returns leak suspects, stack frames, dominator paths, and class histogram.",
+      "module": "tools/mat_runner.py",
+      "function": "analyse_hprof",
+      "parameters": {
+        "type": "object",
+        "required": ["hprof_path"],
+        "properties": {
+          "hprof_path": {
+            "type": "string",
+            "description": "Absolute path to the .hprof heap dump file"
+          },
+          "mat_heap_gb": {
+            "type": "integer",
+            "description": "Max heap in GB for the MAT JVM process (default: 12)",
+            "default": 12
+          },
+          "timeout_s": {
+            "type": "integer",
+            "description": "Timeout in seconds for MAT analysis (default: 7200)",
+            "default": 7200
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "description": "Dict with suspects list (suspect_number, retained_bytes, retained_pct, stack_frames, dominator_path, object_graph_classes) and histogram list"
+      }
+    },
+    {
+      "name": "correlate_dump_to_gc",
+      "description": "Correlate the heap dump file timestamp with the GC log wall-clock timeline. Classifies the dump phase (during_full_gc_storm, post_oom_recovery, normal_operation etc), computes OOM proximity percentage, and returns surrounding GC events.",
+      "module": "tools/correlator.py",
+      "function": "correlate",
+      "parameters": {
+        "type": "object",
+        "required": ["gc_log_path", "hprof_path"],
+        "properties": {
+          "gc_log_path": {
+            "type": "string",
+            "description": "Path to the GC log file"
+          },
+          "hprof_path": {
+            "type": "string",
+            "description": "Path to the .hprof file"
+          },
+          "window_s": {
+            "type": "number",
+            "description": "Seconds around dump time to include as surrounding events (default: 60)",
+            "default": 60
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "description": "Dict with dump_phase, dump_elapsed_s, oom_proximity_pct, live_set_at_dump_mb, inferred_trigger, surrounding_events"
+      }
+    },
+    {
+      "name": "generate_report",
+      "description": "Full end-to-end pipeline: parse GC log, correlate dump, extract MAT suspects, apply fix-pattern matching, and write report.json + report.md to output_dir.",
+      "module": "tools/debug_memory_leak.py",
+      "function": "run_full_analysis",
+      "parameters": {
+        "type": "object",
+        "required": ["hprof_path", "gc_log_path"],
+        "properties": {
+          "hprof_path": {
+            "type": "string",
+            "description": "Path to the .hprof heap dump file"
+          },
+          "gc_log_path": {
+            "type": "string",
+            "description": "Path to the JVM GC log file"
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "Directory to write report.json and report.md (default: beside gc_log_path)",
+            "default": null
+          },
+          "skip_mat": {
+            "type": "boolean",
+            "description": "If true, skip running MAT (use existing suspects ZIP if present)",
+            "default": false
+          },
+          "mat_heap_gb": {
+            "type": "integer",
+            "description": "Max heap in GB for the MAT JVM process",
+            "default": 12
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "description": "Dict with json_report_path, md_report_path, severity, top_recommendations"
+      }
+    }
+  ],
+  "requirements": {
+    "python": ">=3.9",
+    "python_packages": [],
+    "system": {
+      "java17_home": "Java 17+ required for Eclipse MAT. Set JAVA17_HOME env var or ensure /Library/Java/JavaVirtualMachines/microsoft-17.jdk exists.",
+      "curl": "Required for auto-downloading Eclipse MAT on first use (macOS/Linux).",
+      "hdiutil": "Required for unpacking MAT DMG on macOS. Linux uses tar."
+    }
+  },
+  "examples": [
+    {
+      "title": "Full analysis",
+      "description": "Analyze a heap dump with GC log and generate both reports",
+      "invocation": "generate_report",
+      "input": {
+        "hprof_path": "target/jvm-logs/java_pid16615.hprof",
+        "gc_log_path": "target/jvm-logs/gc-16615.log"
+      }
+    },
+    {
+      "title": "GC log only",
+      "description": "Parse just the GC log without running MAT",
+      "invocation": "analyze_gc_log",
+      "input": {
+        "gc_log_path": "target/jvm-logs/gc-16615.log"
+      }
+    }
+  ]
+}
+

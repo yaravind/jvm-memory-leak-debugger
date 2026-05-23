@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MemoryLeakReport",
+  "description": "Output schema for the generate_report tool (report.json)",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "inputs", "gc_analysis",
+               "heap_dump_analysis", "correlation", "recommendations"],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["1.0"] },
+    "generated_at":   { "type": "string", "format": "date-time" },
+    "inputs": {
+      "type": "object",
+      "required": ["hprof", "gc_log"],
+      "properties": {
+        "hprof":   { "type": "string" },
+        "gc_log":  { "type": "string" }
+      }
+    },
+    "gc_analysis": { "$ref": "gc_analysis_result.json" },
+    "heap_dump_analysis": {
+      "type": "object",
+      "properties": {
+        "suspects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["suspect_number"],
+            "properties": {
+              "suspect_number":      { "type": "integer" },
+              "description":         { "type": "string" },
+              "accumulation_point":  { "type": "string" },
+              "retained_bytes":      { "type": "integer" },
+              "retained_pct":        { "type": "number" },
+              "stack_frames":        { "type": "array", "items": { "type": "string" } },
+              "dominator_path":      { "type": "array", "items": { "type": "string" } },
+              "object_graph_classes":{ "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "histogram": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "class":           { "type": "string" },
+              "objects":         { "type": "integer" },
+              "shallow_bytes":   { "type": "integer" },
+              "retained_bytes":  { "type": "integer" }
+            }
+          }
+        },
+        "suspects_zip": { "type": ["string", "null"] }
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "properties": {
+        "dump_phase":            { "type": "string" },
+        "dump_elapsed_s":        { "type": "number" },
+        "oom_proximity_pct":     { "type": ["number", "null"] },
+        "live_set_at_dump_mb":   { "type": ["number", "null"] },
+        "inferred_trigger":      { "type": "string" },
+        "surrounding_events":    { "type": "array" }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "fixes"],
+        "properties": {
+          "id":            { "type": "string" },
+          "title":         { "type": "string" },
+          "description":   { "type": "string" },
+          "fixes":         { "type": "array", "items": { "type": "string" } },
+          "code_pointer":  { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}
+
