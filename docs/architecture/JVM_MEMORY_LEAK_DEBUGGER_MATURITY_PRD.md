@@ -66,13 +66,12 @@ Tracked by: #2, #4, #6, #7.
 Make heap suspect extraction usable on Linux and macOS first, with Windows
 behavior documented and either supported directly or clearly gated.
 
-Status: partially implemented on `codex/maturity-roadmap` for pinned MAT ZIP
-selection, SHA-256 verification, Java discovery, first-run `curl` readiness,
-install-layout detection, an artifact-free `--check-runtime` diagnostic, and
-configurable `mat_home` for managed MAT installations. A manual `MAT Runtime
-Smoke` workflow and local `make test-mat-runtime` target can gather live
-download/unpack evidence without needing a heap dump. Still needs those live
-Linux/Windows workflow results before release.
+Status: implemented on `codex/maturity-roadmap` for pinned MAT ZIP selection,
+SHA-256 verification, Java discovery, first-run `curl` readiness, install-layout
+detection, an artifact-free `--check-runtime` diagnostic, and configurable
+`mat_home` for managed MAT installations. `MAT Runtime Smoke` passed on hosted
+Linux, macOS, and Windows with Java 17 for commit `1954e9b`:
+https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458850.
 
 Acceptance criteria:
 
@@ -246,12 +245,13 @@ Acceptance criteria:
 Prove the portable core works on the operating systems named in the goal before
 claiming release readiness.
 
-Status: partially implemented on `codex/maturity-roadmap` with a GitHub Actions
-cross-platform smoke matrix for Linux, macOS, and Windows on Python 3.9 and
-3.12. The smoke matrix validates the manifest/dispatch contract, GC parser,
-editable install, installed console command, runtime diagnostics, and
-importability of the packaged core modules without requiring MAT download or a
-real heap dump.
+Status: implemented on `codex/maturity-roadmap` with hosted evidence from
+`Test JVM Memory Leak Debugger Skill` for commit `1954e9b`:
+https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458844.
+The GitHub Actions smoke matrix passed on Linux, macOS, and Windows for Python
+3.9 and 3.12. It validates the manifest/dispatch contract, GC parser, editable
+install, installed console command, runtime diagnostics, and importability of the
+packaged core modules without requiring MAT download or a real heap dump.
 
 Acceptance criteria:
 
@@ -278,15 +278,16 @@ Acceptance criteria:
 Verify the optional HTTP and MCP hosting layers are operational when their
 extras are installed, while keeping the core CLI dependency-free.
 
-Status: implemented locally on `codex/maturity-roadmap` with optional FastAPI
-and MCP smoke tests plus a GitHub Actions `adapter-smoke` job that installs
-`.[server,mcp]`, verifies installed adapter command `--help` output, and runs
-`make test-adapters`. Latest local adapter smoke was run from the current
-worktree with an optional-dependency Python 3.12 venv:
+Status: implemented on `codex/maturity-roadmap` with optional FastAPI and MCP
+smoke tests plus a passing hosted Python 3.11 optional adapter smoke in
+`Test JVM Memory Leak Debugger Skill` for commit `1954e9b`:
+https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458844.
+The hosted job installs `.[server,mcp]`, verifies installed adapter command
+`--help` output, and runs `make test-adapters`. Latest local adapter smoke was
+also run from the current worktree with an optional-dependency Python 3.12 venv:
 `PYTHON=/private/tmp/jvm-memleak-py312-adapters/bin/python make test-adapters`
 passed all 8 adapter tests, including 6 HTTP adapter tests and 2 MCP wrapper
-tests. Hosted MCP runtime proof still needs the Python 3.11 `adapter-smoke`
-job URL from the main GitHub Actions workflow before release sign-off.
+tests.
 
 Acceptance criteria:
 

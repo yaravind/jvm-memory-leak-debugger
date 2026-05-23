@@ -586,6 +586,29 @@ Codex, Claude, GitHub Copilot, MCP hosts, HTTP adapters, and shell workflows.
   - `make test` passed: 97 selected tests, 2 optional adapter skips, and 3 full
     E2E tests deselected.
   - `make lint` passed with the `py_compile` fallback across 13 Python files.
+- Committed and pushed MAT workflow trigger update as `1954e9b`, which triggered
+  both hosted release-evidence workflows.
+- `MAT Runtime Smoke` run `26345458850`
+  (`https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458850`)
+  passed for commit `1954e9b` on `codex/maturity-roadmap`, including
+  Linux/macOS/Windows MAT download, SHA-256 verify, unpack, and launcher
+  validation with Java 17.
+- `Test JVM Memory Leak Debugger Skill` run `26345458844`
+  (`https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458844`)
+  passed for commit `1954e9b` on `codex/maturity-roadmap`, including pyflakes
+  lint, package smoke, Python 3.11 optional adapter smoke, real GC-log E2E jobs,
+  and Linux/macOS/Windows cross-platform smoke for Python 3.9 and 3.12.
+- Updated release evidence docs, the completion audit, the issue resolution
+  matrix, and the maturity PRD to record the successful hosted workflow URLs and
+  remove stale "do not claim yet" language. Manifest tests were updated to guard
+  the recorded run IDs and hosted-evidence status.
+- Verification after recording hosted evidence:
+  - `PYTHONPATH=tools python3 -m pytest tests/test_manifest.py -v` passed, 19
+    tests.
+  - `make validate-manifests` passed.
+  - `make test` passed: 97 selected tests, 2 optional adapter skips, and 3 full
+    E2E tests deselected.
+  - `make lint` passed with the `py_compile` fallback across 13 Python files.
 
 ## Current Implementation Pass
 

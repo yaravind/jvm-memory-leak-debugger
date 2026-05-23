@@ -1,10 +1,10 @@
 # Release Evidence Snapshot
 
-Last updated: 2026-05-23 18:10 EDT
+Last updated: 2026-05-23 18:42 EDT
 
 This snapshot records what has been proven from the current
-`codex/maturity-roadmap` worktree and what still needs external evidence before
-the maturity goal can be called complete.
+`codex/maturity-roadmap` worktree and from hosted GitHub Actions release
+evidence.
 
 For a requirement-by-requirement audit of the original goal, see
 `docs/architecture/MATURITY_COMPLETION_AUDIT.md`.
@@ -27,45 +27,30 @@ For the GitHub issue-by-issue implementation evidence, see
 | Optional HTTP/MCP adapters | `PYTHON=/private/tmp/jvm-memleak-py312-adapters/bin/python make test-adapters` passed 8 tests in a Python 3.12 optional-dependency venv: 6 HTTP adapter tests and 2 MCP wrapper tests. |
 | Full heap replay policy | `docs/adr/0004-keep-full-heap-replay-as-external-release-evidence.md` records that full `.hprof` replay remains supported through `make test-e2e-full`, but is external release evidence rather than a required default release gate unless a maintained trusted heap artifact is available. |
 
-## Partially Proven
+## Proven On GitHub Actions
 
-| Area | Current evidence | Missing evidence |
-| --- | --- | --- |
-| Cross-platform core | `.github/workflows/test-skill.yml` defines Linux, macOS, and Windows smoke coverage for Python 3.9 and 3.12, installed CLI checks, package smoke, adapter smoke, and real GC fixture tests. | Live successful `Test JVM Memory Leak Debugger Skill` GitHub Actions run URL from this branch. |
-| MAT runtime portability | `.github/workflows/mat-runtime-smoke.yml` and `make test-mat-runtime` verify the pinned MAT archive download/unpack path without a heap dump. The workflow supports push/PR-triggered branch evidence and manual reruns after it exists on the default branch. Local no-download diagnostics work, but this host's Java points at Java 11. | Live successful `MAT Runtime Smoke` GitHub Actions run URL, or equivalent Linux/macOS/Windows host logs with Java 17 and network access. |
+| Area | Evidence |
+| --- | --- |
+| Cross-platform core, package, lint, adapters, and real GC fixture | `Test JVM Memory Leak Debugger Skill` passed for commit `1954e9b` on `codex/maturity-roadmap`: https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458844. The run included pyflakes lint, package smoke, Python 3.11 optional adapter smoke, real GC-log E2E jobs, and Linux/macOS/Windows cross-platform smoke for Python 3.9 and 3.12. |
+| MAT runtime portability | `MAT Runtime Smoke` passed for commit `1954e9b` on `codex/maturity-roadmap`: https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458850. The run downloaded, SHA-256 verified, unpacked, and validated the pinned Eclipse MAT distribution on Ubuntu, macOS, and Windows with Java 17 and no heap dump. |
 
 ## External State Checked
 
-On 2026-05-23 17:58 EDT, `gh run list` found no
-`Test JVM Memory Leak Debugger Skill` runs for branch
-`codex/maturity-roadmap`. The same check could not find a remote
-`MAT Runtime Smoke` workflow yet, which is expected until
-`.github/workflows/mat-runtime-smoke.yml` is committed and pushed.
+On 2026-05-23 18:42 EDT, `gh run watch` confirmed successful completion for
+both required hosted workflows on branch `codex/maturity-roadmap`.
 
-## Do Not Claim Yet
+## Residual Release Notes
 
-- Do not claim Windows MAT readiness from source-only tests. Use the
-  push/PR-triggered MAT runtime workflow, the manual MAT runtime workflow, or a
-  Windows host running `make test-mat-runtime`.
-- Do not claim hosted MCP runtime readiness until the Python 3.11
-  `adapter-smoke` job in `Test JVM Memory Leak Debugger Skill` has a successful
-  live run URL, even though local Python 3.12 MCP smoke now passes.
-- Do not mark the maturity goal complete until the cross-platform core workflow
-  and MAT runtime smoke workflow have live successful run URLs recorded.
+- The default release gate still does not run `make test-e2e-full` with a real
+  `.hprof`; ADR 0004 keeps that as external replay evidence unless a maintained
+  trusted heap artifact is available.
+- GitHub Actions emitted Node.js 20 deprecation annotations for upstream
+  `actions/*` dependencies. They did not fail either workflow.
 
-## Next Evidence To Capture
+## Evidence Capture Commands
 
-1. Push the maturity branch after explicit commit/push authorization.
-2. Run `Test JVM Memory Leak Debugger Skill` on GitHub Actions and record the
-   successful run URL.
-3. Use the push/PR-triggered `MAT Runtime Smoke` GitHub Actions run, or rerun it
-   manually after the workflow exists on the default branch, and record the
-   successful run URL.
-4. Confirm the `adapter-smoke` job in `Test JVM Memory Leak Debugger Skill`
-   passed, because it is the hosted Python 3.11 MCP proof.
-
-Use the runbook in `docs/architecture/RELEASE_READINESS_CHECKLIST.md` to list,
-start, watch, and inspect the required GitHub Actions runs:
+Use the runbook in `docs/architecture/RELEASE_READINESS_CHECKLIST.md` to refresh
+or re-check GitHub Actions runs:
 `gh run list`, `gh workflow run "MAT Runtime Smoke"`, `gh run watch`, and
 `gh run view --log-failed`. Capture final evidence URLs with
 `gh run view <run-id> --json url`.

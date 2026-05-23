@@ -203,7 +203,9 @@ def test_release_readiness_checklist_tracks_required_evidence():
         "--json databaseId,status,conclusion,url",
         "gh run view <run-id> --repo yaravind/jvm-memory-leak-debugger --json url",
         "Do not claim Windows MAT readiness from source-only tests",
-        "still capture CI adapter-smoke via the main workflow",
+        "Ready with hosted evidence",
+        "26345458844",
+        "26345458850",
         "MATURITY_COMPLETION_AUDIT.md",
     ):
         assert required in text
@@ -216,13 +218,14 @@ def test_release_readiness_checklist_tracks_required_evidence():
         "MAT Runtime Smoke",
         "PYTHON=/private/tmp/jvm-memleak-py312-adapters/bin/python make test-adapters",
         "2 MCP wrapper tests",
+        "26345458844",
+        "26345458850",
         "gh workflow run \"MAT Runtime Smoke\"",
-        "push/PR-triggered",
         "gh run watch",
         "gh run view --log-failed",
         "gh run view <run-id> --json url",
-        "Do not claim Windows MAT readiness from source-only tests",
-        "Do not claim hosted MCP runtime readiness until the Python 3.11",
+        "Proven On GitHub Actions",
+        "Node.js 20 deprecation annotations",
         "ADR 0004 for full heap replay evidence policy",
         "Full heap replay policy",
         "MATURITY_COMPLETION_AUDIT.md",
@@ -235,12 +238,20 @@ def test_release_readiness_checklist_tracks_required_evidence():
         "Work with MCP hosts such as Claude",
         "Work without MCP",
         "Configure with Codex, Claude, GitHub Copilot, and other harnesses",
+        "Ready with hosted evidence",
+        "26345458844",
+        "26345458850",
+        "The required externally verifiable items are captured",
+    ):
+        assert required in audit
+
+    for outdated in (
         "Requires live GitHub Actions run URLs",
         "Successful `Test JVM Memory Leak Debugger Skill` GitHub Actions run URL",
         "Successful `MAT Runtime Smoke` GitHub Actions run URL",
         "Local\n`make release-check` is necessary but not sufficient",
     ):
-        assert required in audit
+        assert outdated not in audit
 
     for required in (
         "Issue Resolution Matrix",
@@ -249,7 +260,8 @@ def test_release_readiness_checklist_tracks_required_evidence():
         "#3 Hardcoded project-specific recommendation patterns",
         "#8 Tool wiring duplicated across deployment surfaces",
         "#14 Hardcoded Makefile paths",
-        "Hosted Python 3.11 `adapter-smoke` job URL",
+        "26345458844",
+        "26345458850",
         "Test JVM Memory Leak Debugger Skill",
         "MAT Runtime Smoke",
     ):
@@ -315,12 +327,14 @@ def test_prd_marks_locally_completed_maturity_slices_without_overclaiming_ci():
     assert "Status: implemented locally on `codex/maturity-roadmap` with\n`pyproject.toml`" in text
     assert "package smoke evidence from a non-editable install outside the source\ncheckout" in text
     assert "M9: Cross-Platform CI Evidence" in text
-    assert "Status: partially implemented on `codex/maturity-roadmap` with a GitHub Actions\ncross-platform smoke matrix" in text
+    assert "Status: implemented on `codex/maturity-roadmap` with hosted evidence from\n`Test JVM Memory Leak Debugger Skill`" in text
+    assert "https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458844" in text
+    assert "https://github.com/yaravind/jvm-memory-leak-debugger/actions/runs/26345458850" in text
     assert "M10: Optional Adapter Runtime Evidence" in text
-    assert "Status: implemented locally on `codex/maturity-roadmap` with optional FastAPI\nand MCP smoke tests" in text
+    assert "Status: implemented on `codex/maturity-roadmap` with optional FastAPI and MCP\nsmoke tests" in text
     assert "PYTHON=/private/tmp/jvm-memleak-py312-adapters/bin/python make test-adapters" in text
     assert "passed all 8 adapter tests" in text
-    assert "Hosted MCP runtime proof still needs the Python 3.11 `adapter-smoke`\njob URL" in text
+    assert "Hosted MCP runtime proof still needs" not in text
 
 
 def test_contributor_cleanup_regression_guards():
